@@ -3,7 +3,10 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from pipeline.config import get_chroma_collection
+from pipeline.config import (
+    get_chroma_collection,
+    list_collection_names,
+)
 from pipeline.embedder import embed_chunks
 
 
@@ -43,6 +46,7 @@ def vector_search(
     model: str | None = None,
     equipment_type: str | None = None,
     document_type: str | None = None,
+    collection_name: str | None = None,
     filters: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """
@@ -63,28 +67,47 @@ def vector_search(
         extra_filters=filters,
     )
 
+    if collection_name:
+        collection_names = [collection_name]
+    else:
+        collection_names = list_collection_names(include_legacy=True, include_existing=True)
+
     query_embedding = _embed_query(query)
-    collection = get_chroma_collection()
-    raw = collection.query(
-        query_embeddings=[query_embedding],
-        n_results=top_k,
-        where=where,
-        include=["documents", "metadatas", "distances"],
-    )
+    merged: list[dict[str, Any]] = []
+    for name in collection_names:
+        collection = get_chroma_collection(name)
+        try:
+            raw = collection.query(
+                query_embeddings=[query_embedding],
+                n_results=top_k,
+                where=where,
+                include=["documents", "metadatas", "distances"],
+            )
+        except Exception:
+            continue
 
-    ids = (raw.get("ids") or [[]])[0]
-    documents = (raw.get("documents") or [[]])[0]
-    metadatas = (raw.get("metadatas") or [[]])[0]
-    distances = (raw.get("distances") or [[]])[0]
+        ids = (raw.get("ids") or [[]])[0]
+        documents = (raw.get("documents") or [[]])[0]
+        metadatas = (raw.get("metadatas") or [[]])[0]
+        distances = (raw.get("distances") or [[]])[0]
 
+        for idx, chunk_id in enumerate(ids):
+            merged.append(
+                {
+                    "chunk_id": chunk_id,
+                    "collection_name": name,
+                    "text": documents[idx] if idx < len(documents) else "",
+                    "metadata": metadatas[idx] if idx < len(metadatas) else {},
+                    "distance": distances[idx] if idx < len(distances) else None,
+                }
+            )
+
+    merged.sort(key=lambda item: item["distance"] if item["distance"] is not None else float("inf"))
     results: list[dict[str, Any]] = []
-    for rank, chunk_id in enumerate(ids, start=1):
+    for rank, item in enumerate(merged[:top_k], start=1):
         results.append(
             {
-                "chunk_id": chunk_id,
-                "text": documents[rank - 1] if rank - 1 < len(documents) else "",
-                "metadata": metadatas[rank - 1] if rank - 1 < len(metadatas) else {},
-                "distance": distances[rank - 1] if rank - 1 < len(distances) else None,
+                **item,
                 "rank": rank,
             }
         )

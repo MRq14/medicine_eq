@@ -353,6 +353,8 @@
                         <div class="result-meta">
                             <span class="tag">Equipment: ${escapeHtml(result.metadata.equipment_type || 'N/A')}</span>
                             <span class="tag">Doc: ${escapeHtml(result.metadata.document_type || 'N/A')}</span>
+                            <span class="tag">Collection: ${escapeHtml(result.collection_name || 'N/A')}</span>
+                            <span class="tag">Group: ${escapeHtml(result.metadata.doc_group || 'N/A')}</span>
                             <span class="score">BM25: ${(result.bm25_score || 0).toFixed(2)}</span>
                         </div>
                     </div>
@@ -412,8 +414,10 @@
                 docs.innerHTML = data.documents.map(doc => `
                     <div class="doc-item">
                         <div>
-                            <div class="doc-name">${escapeHtml(doc.metadata.doc_name)}</div>
+                            <div class="doc-name">${escapeHtml(doc.doc_name || doc.metadata.doc_name || 'unknown')}</div>
                             <div style="font-size: 0.85rem; color: #666; margin-top: 5px;">
+                                Collection: ${escapeHtml(doc.collection_name || 'N/A')} ·
+                                Group: ${escapeHtml(doc.doc_group || 'N/A')} ·
                                 Type: ${escapeHtml(doc.metadata.document_type || 'N/A')}
                             </div>
                         </div>

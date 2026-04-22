@@ -20,6 +20,7 @@ def hybrid_search(
     model: str | None = None,
     equipment_type: str | None = None,
     document_type: str | None = None,
+    collection_name: str | None = None,
     filters: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """
@@ -38,6 +39,7 @@ def hybrid_search(
         model=model,
         equipment_type=equipment_type,
         document_type=document_type,
+        collection_name=collection_name,
         filters=filters,
     )
     bm25_results = bm25_search(
@@ -47,6 +49,7 @@ def hybrid_search(
         model=model,
         equipment_type=equipment_type,
         document_type=document_type,
+        collection_name=collection_name,
         filters=filters,
     )
 
@@ -54,10 +57,13 @@ def hybrid_search(
 
     for item in vector_results:
         chunk_id = item["chunk_id"]
+        item_collection_name = item.get("collection_name")
+        fusion_key = f"{item_collection_name}::{chunk_id}"
         entry = fused.setdefault(
-            chunk_id,
+            fusion_key,
             {
                 "chunk_id": chunk_id,
+                "collection_name": item_collection_name,
                 "text": item.get("text", ""),
                 "metadata": item.get("metadata", {}),
                 "rrf_score": 0.0,
@@ -74,10 +80,13 @@ def hybrid_search(
 
     for item in bm25_results:
         chunk_id = item["chunk_id"]
+        item_collection_name = item.get("collection_name")
+        fusion_key = f"{item_collection_name}::{chunk_id}"
         entry = fused.setdefault(
-            chunk_id,
+            fusion_key,
             {
                 "chunk_id": chunk_id,
+                "collection_name": item_collection_name,
                 "text": item.get("text", ""),
                 "metadata": item.get("metadata", {}),
                 "rrf_score": 0.0,

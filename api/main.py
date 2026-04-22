@@ -1,12 +1,12 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from pydantic import BaseModel
-from typing import Optional
+from typing import Any, Optional
 import tempfile
 import os
 
 from pipeline.ingestion import ingest_pdf
 from retrieval import hybrid_search
-from pipeline.config import get_chroma_collection as get_collection
+from pipeline.config import get_chroma_collection, list_collection_names
 
 app = FastAPI(title="Medical Equipment RAG", version="1.0")
 
@@ -14,14 +14,15 @@ app = FastAPI(title="Medical Equipment RAG", version="1.0")
 class SearchRequest(BaseModel):
     query: str
     top_k: int = 5
+    collection_name: Optional[str] = None
     filters: Optional[dict] = None
 
 
 class SearchResult(BaseModel):
     chunk_id: str
+    collection_name: Optional[str] = None
     text: str
     metadata: dict
-    vector_score: Optional[float] = None
     bm25_score: Optional[float] = None
     fusion_rank: int
 
@@ -36,6 +37,8 @@ class IngestResponse(BaseModel):
     filename: str
     chunks_ingested: int
     status: str
+    collection_name: Optional[str] = None
+    doc_group: Optional[str] = None
 
 
 @app.post("/search", response_model=SearchResponse)
@@ -51,15 +54,16 @@ async def search(request: SearchRequest):
     results = hybrid_search(
         query=request.query,
         top_k=request.top_k,
+        collection_name=request.collection_name,
         filters=request.filters or {}
     )
 
     formatted_results = [
         SearchResult(
             chunk_id=r["chunk_id"],
+            collection_name=r.get("collection_name"),
             text=r["text"],
             metadata=r["metadata"],
-            vector_score=r.get("vector_score"),
             bm25_score=r.get("bm25_score"),
             fusion_rank=i + 1
         )
@@ -79,7 +83,7 @@ async def ingest(file: UploadFile = File(...)):
     Upload and ingest a medical equipment PDF.
     Parses, chunks, embeds, and stores in ChromaDB.
     """
-    if not file.filename.endswith(".pdf"):
+    if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted")
 
     try:
@@ -94,7 +98,9 @@ async def ingest(file: UploadFile = File(...)):
             return IngestResponse(
                 filename=file.filename,
                 chunks_ingested=result.get("chunks_added", 0),
-                status=result.get("status", "unknown")
+                status=result.get("status", "unknown"),
+                collection_name=result.get("collection_name"),
+                doc_group=result.get("doc_group"),
             )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ingestion failed: {str(e)}")
@@ -106,20 +112,41 @@ async def list_documents():
     List all ingested documents with metadata.
     """
     try:
-        collection = get_collection()
-        results = collection.get()
+        docs: dict[str, dict[str, Any]] = {}
+        total_chunks = 0
+        total_documents = 0
 
-        docs = {}
-        for chunk_id, metadata in zip(results["ids"], results["metadatas"]):
-            doc_name = metadata.get("document_name", "unknown")
-            if doc_name not in docs:
-                docs[doc_name] = {"metadata": metadata, "chunk_count": 0}
-            docs[doc_name]["chunk_count"] += 1
+        for collection_name in list_collection_names(include_legacy=True, include_existing=True):
+            collection = get_chroma_collection(collection_name)
+            results = collection.get(include=["metadatas"])
+            ids = results.get("ids") or []
+            metadatas = results.get("metadatas") or []
+            total_chunks += len(ids)
+
+            for idx, chunk_id in enumerate(ids):
+                metadata = metadatas[idx] if idx < len(metadatas) and metadatas[idx] else {}
+                doc_name = metadata.get("doc_name", "unknown")
+                doc_group = metadata.get("doc_group", "general")
+                key = f"{collection_name}::{doc_group}::{doc_name}"
+
+                if key not in docs:
+                    total_documents += 1
+                    docs[key] = {
+                        "doc_name": doc_name,
+                        "doc_group": doc_group,
+                        "collection_name": collection_name,
+                        "chunk_count": 0,
+                        "metadata": metadata,
+                    }
+                docs[key]["chunk_count"] += 1
 
         return {
-            "documents": list(docs.values()),
-            "total_chunks": len(results["ids"]),
-            "total_documents": len(docs)
+            "documents": sorted(
+                docs.values(),
+                key=lambda item: (item["collection_name"], item["doc_group"], item["doc_name"]),
+            ),
+            "total_chunks": total_chunks,
+            "total_documents": total_documents,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch documents: {str(e)}")
