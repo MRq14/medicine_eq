@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
-from chromadb import PersistentClient
+from chromadb import CloudClient, PersistentClient
 from chromadb.api import ClientAPI
 from chromadb.api.models.Collection import Collection
 from dotenv import load_dotenv
@@ -11,17 +12,31 @@ load_dotenv()
 
 CHROMA_DB_PATH = Path("./chroma_db")
 CHROMA_COLLECTION_NAME = "medical_docs"
+CHROMA_CLOUD_TENANT = os.getenv("CHROMA_CLOUD_TENANT", "default")
+CHROMA_CLOUD_DATABASE = os.getenv("CHROMA_CLOUD_DATABASE", "MedEq")
 
 _client_cache: ClientAPI | None = None
 _collection_cache: Collection | None = None
 
 
+def _is_cloud_enabled() -> bool:
+    return bool(os.getenv("CHROMA_CLOUD_API_KEY"))
+
+
 def get_chroma_client(path: str | Path = CHROMA_DB_PATH) -> ClientAPI:
     global _client_cache
     if _client_cache is None:
-        db_path = Path(path)
-        db_path.mkdir(parents=True, exist_ok=True)
-        _client_cache = PersistentClient(path=str(db_path))
+        if _is_cloud_enabled():
+            api_key = os.getenv("CHROMA_CLOUD_API_KEY")
+            _client_cache = CloudClient(
+                api_key=api_key,
+                tenant=CHROMA_CLOUD_TENANT,
+                database=CHROMA_CLOUD_DATABASE
+            )
+        else:
+            db_path = Path(path)
+            db_path.mkdir(parents=True, exist_ok=True)
+            _client_cache = PersistentClient(path=str(db_path))
     return _client_cache
 
 

@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medical Equipment RAG Search</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            font-size: 1rem;
+            opacity: 0.9;
+        }
+
+        .main-panel {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            margin-bottom: 30px;
+        }
+
+        .search-section {
+            margin-bottom: 40px;
+        }
+
+        .search-box {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 14px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            padding: 14px 32px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        button:hover {
+            background: #5568d3;
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .ingest-section {
+            border-top: 1px solid #e0e0e0;
+            padding-top: 30px;
+        }
+
+        .ingest-box {
+            border: 2px dashed #667eea;
+            border-radius: 8px;
+            padding: 30px;
+            text-align: center;
+            background: #f9f9ff;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .ingest-box:hover {
+            background: #f0f0ff;
+        }
+
+        .ingest-box input {
+            display: none;
+        }
+
+        .ingest-box label {
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .ingest-icon {
+            font-size: 2.5rem;
+        }
+
+        .results {
+            margin-top: 30px;
+        }
+
+        .result-item {
+            background: #f9f9f9;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+            transition: background 0.3s;
+        }
+
+        .result-item:hover {
+            background: #f0f0f0;
+        }
+
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 10px;
+        }
+
+        .result-title {
+            font-weight: 600;
+            color: #333;
+            flex: 1;
+        }
+
+        .result-rank {
+            background: #667eea;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .result-text {
+            color: #555;
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+
+        .result-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            font-size: 0.85rem;
+        }
+
+        .tag {
+            background: #e0e0e0;
+            padding: 4px 10px;
+            border-radius: 4px;
+            color: #666;
+        }
+
+        .score {
+            color: #999;
+            font-size: 0.85rem;
+        }
+
+        .status {
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            display: none;
+        }
+
+        .status.show {
+            display: block;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .documents-section {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 30px;
+        }
+
+        .documents-section h2 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .doc-item {
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .doc-name {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .doc-count {
+            background: #667eea;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            color: #667eea;
+            font-weight: 600;
+            margin: 20px 0;
+        }
+
+        .loading.show {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🏥 Medical Equipment RAG</h1>
+            <p class="subtitle">Search medical equipment service documentation</p>
+        </header>
+
+        <div class="main-panel">
+            <div class="search-section">
+                <div id="status" class="status"></div>
+
+                <div class="search-box">
+                    <input type="text" id="query" placeholder="Search medical equipment docs..." />
+                    <button onclick="search()">Search</button>
+                </div>
+
+                <div id="loading" class="loading">Searching...</div>
+
+                <div id="results" class="results"></div>
+            </div>
+
+            <div class="ingest-section">
+                <h3 style="margin-bottom: 15px; color: #333;">Upload Medical Equipment PDF</h3>
+                <div class="ingest-box">
+                    <label>
+                        <div class="ingest-icon">📄</div>
+                        <span>Click to select a PDF or drag and drop</span>
+                        <input type="file" id="file" accept=".pdf" onchange="handleFileSelect(event)" />
+                    </label>
+                </div>
+                <div id="ingestStatus" style="margin-top: 15px;"></div>
+            </div>
+        </div>
+
+        <div class="documents-section">
+            <h2>📚 Ingested Documents</h2>
+            <div id="documents"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+
+        async function search() {
+            const query = document.getElementById('query').value.trim();
+            if (!query) {
+                showStatus('Enter a search query', 'error');
+                return;
+            }
+
+            const loading = document.getElementById('loading');
+            const results = document.getElementById('results');
+
+            loading.classList.add('show');
+            results.innerHTML = '';
+
+            try {
+                const response = await fetch(`${API_BASE}/search`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query, top_k: 5 })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Search failed');
+                }
+
+                const data = await response.json();
+
+                if (data.results.length === 0) {
+                    results.innerHTML = '<p style="color: #999; text-align: center;">No results found</p>';
+                    return;
+                }
+
+                results.innerHTML = data.results.map(result => `
+                    <div class="result-item">
+                        <div class="result-header">
+                            <div class="result-title">${escapeHtml(result.text.substring(0, 100))}</div>
+                            <div class="result-rank">Rank #${result.fusion_rank}</div>
+                        </div>
+                        <div class="result-text">${escapeHtml(result.text)}</div>
+                        <div class="result-meta">
+                            <span class="tag">Equipment: ${escapeHtml(result.metadata.equipment_type || 'N/A')}</span>
+                            <span class="tag">Doc: ${escapeHtml(result.metadata.document_type || 'N/A')}</span>
+                            <span class="score">BM25: ${(result.bm25_score || 0).toFixed(2)}</span>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                showStatus(`Search error: ${error.message}`, 'error');
+            } finally {
+                loading.classList.remove('show');
+            }
+        }
+
+        async function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const statusDiv = document.getElementById('ingestStatus');
+            statusDiv.innerHTML = '<div class="status show info">Uploading and processing...</div>';
+
+            try {
+                const response = await fetch(`${API_BASE}/ingest`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Ingest failed');
+                }
+
+                const data = await response.json();
+                statusDiv.innerHTML = `<div class="status show success">✓ Ingested ${data.chunks_ingested} chunks from ${data.filename}</div>`;
+                document.getElementById('file').value = '';
+
+                // Refresh documents list
+                loadDocuments();
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="status show error">✗ ${error.message}</div>`;
+            }
+        }
+
+        async function loadDocuments() {
+            try {
+                const response = await fetch(`${API_BASE}/documents`);
+                if (!response.ok) throw new Error('Failed to fetch documents');
+
+                const data = await response.json();
+                const docs = document.getElementById('documents');
+
+                if (data.documents.length === 0) {
+                    docs.innerHTML = '<p style="color: #999;">No documents ingested yet</p>';
+                    return;
+                }
+
+                docs.innerHTML = data.documents.map(doc => `
+                    <div class="doc-item">
+                        <div>
+                            <div class="doc-name">${escapeHtml(doc.metadata.doc_name)}</div>
+                            <div style="font-size: 0.85rem; color: #666; margin-top: 5px;">
+                                Type: ${escapeHtml(doc.metadata.document_type || 'N/A')}
+                            </div>
+                        </div>
+                        <div class="doc-count">${doc.chunk_count} chunks</div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Error loading documents:', error);
+            }
+        }
+
+        function showStatus(message, type) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `status show ${type}`;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Allow drag and drop
+        const ingestBox = document.querySelector('.ingest-box');
+        ingestBox.addEventListener('dragover', e => {
+            e.preventDefault();
+            ingestBox.style.background = '#e0e0ff';
+        });
+
+        ingestBox.addEventListener('dragleave', () => {
+            ingestBox.style.background = '#f9f9ff';
+        });
+
+        ingestBox.addEventListener('drop', e => {
+            e.preventDefault();
+            ingestBox.style.background = '#f9f9ff';
+            const file = e.dataTransfer.files[0];
+            if (file && file.type === 'application/pdf') {
+                const input = document.getElementById('file');
+                input.files = e.dataTransfer.files;
+                handleFileSelect({ target: { files: [file] } });
+            }
+        });
+
+        // Load documents on page load
+        document.addEventListener('DOMContentLoaded', loadDocuments);
+
+        // Allow Enter to search
+        document.getElementById('query').addEventListener('keypress', e => {
+            if (e.key === 'Enter') search();
+        });
+    </script>
+</body>
+</html>

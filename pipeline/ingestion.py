@@ -30,18 +30,27 @@ def ingest_pdf(file_path: str | Path) -> dict:
     parsed_doc = parse_pdf(file_path)
 
     print(f"[2/4] Chunking {parsed_doc.metadata.doc_name}...")
-    chunks = chunk_document(parsed_doc)
+    chunks = chunk_document(parsed_doc, min_chars=20)
     print(f"      Generated {len(chunks)} chunks")
+
+    if not chunks:
+        print(f"⚠ No chunks generated for {file_path.name}. Skipping ingestion.")
+        return {
+            "status": "skipped",
+            "doc_name": parsed_doc.metadata.doc_name,
+            "reason": "no_chunks",
+        }
 
     print(f"[3/4] Embedding {len(chunks)} chunks...")
     embeddings = embed_chunks(chunks)
 
     print(f"[4/4] Storing in ChromaDB...")
     # Prepare documents (single pass)
+    # Exclude None values from metadata for cloud compatibility
     insert_data = {
         "ids": [chunk.chunk_id for chunk in chunks],
         "documents": [chunk.text for chunk in chunks],
-        "metadatas": [chunk.metadata.model_dump() for chunk in chunks],
+        "metadatas": [chunk.metadata.model_dump(exclude_none=True) for chunk in chunks],
         "embeddings": embeddings,
     }
 

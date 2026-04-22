@@ -6,4 +6,5 @@ pydantic
 fastapi
 uvicorn
 python-dotenv
+python-multipart
 numpy
