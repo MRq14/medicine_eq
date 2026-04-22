@@ -1,6 +1,6 @@
 docling
 chromadb
-openai
+sentence-transformers
 rank_bm25
 pydantic
 fastapi
