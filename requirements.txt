@@ -1,0 +1,9 @@
+docling
+chromadb
+openai
+rank_bm25
+pydantic
+fastapi
+uvicorn
+python-dotenv
+numpy

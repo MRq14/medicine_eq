@@ -17,22 +17,24 @@ class DocMetadata(BaseModel):
     document_type: str | None = None  # "service_manual", "user_guide", etc.
 
 
-# Heuristic keyword lists for equipment type and document type detection
 _EQUIPMENT_KEYWORDS = {
-    "ventilator": ["ventilator", "respirator", "breathing machine"],
-    "infusion_pump": ["infusion pump", "syringe pump", "iv pump"],
-    "patient_monitor": ["patient monitor", "vital signs", "multiparameter"],
-    "defibrillator": ["defibrillator", "aed", "cardioverter"],
-    "anesthesia": ["anesthesia", "anaesthesia", "anesthetic machine"],
-    "ultrasound": ["ultrasound", "sonography", "echography"],
-    "x_ray": ["x-ray", "xray", "radiograph", "fluoroscopy"],
-    "mri": ["mri", "magnetic resonance"],
-    "ct_scanner": ["ct scanner", "computed tomography"],
-    "ecg": ["ecg", "ekg", "electrocardiograph"],
-    "dialysis": ["dialysis", "hemodialysis"],
-    "incubator": ["incubator", "neonatal"],
-    "sterilizer": ["sterilizer", "autoclave"],
-    "centrifuge": ["centrifuge"],
+    "x_ray": ["x-ray", "xray", "radiograph", "fluoroscopy", "fdr", "digital radiography", "dr system"],
+    "ultrasound": ["ultrasound", "sonography", "echography", "ultrasonic"],
+    "mri": ["mri", "magnetic resonance", "nmr"],
+    "ct_scanner": ["ct scanner", "computed tomography", "cat scan"],
+    "ventilator": ["ventilator", "respirator", "breathing machine", "ventilation"],
+    "infusion_pump": ["infusion pump", "syringe pump", "iv pump", "peristaltic"],
+    "patient_monitor": ["patient monitor", "vital signs", "multiparameter", "cardiac monitor"],
+    "defibrillator": ["defibrillator", "aed", "cardioverter", "defibrillation"],
+    "anesthesia": ["anesthesia", "anaesthesia", "anesthetic machine", "anesthetic"],
+    "dialysis": ["dialysis", "hemodialysis", "nephology"],
+    "incubator": ["incubator", "neonatal", "nicu"],
+    "sterilizer": ["sterilizer", "autoclave", "steam sterilizer"],
+    "centrifuge": ["centrifuge", "microcentrifuge"],
+    "blood_gas": ["blood gas", "gas analyzer", "electrolyte analyzer"],
+    "hemoglobin": ["hemoglobin", "hemocue", "hematology"],
+    "surgical_light": ["surgical light", "operation light", "operating lamp"],
+    "dehumidifier": ["dehumidifier", "humidification system"],
 }
 
 _DOC_TYPE_KEYWORDS = {
@@ -49,25 +51,27 @@ def _extract_metadata(text_sample: str, filename: str) -> DocMetadata:
     doc_name = Path(filename).stem
     sample_lower = text_sample.lower()
 
-    # Manufacturer: look for common patterns near "manufacturer", brand names, or "made by"
+    # Manufacturer: common medical device brands
     manufacturer = None
-    mfr_match = re.search(
-        r"(?:manufacturer|manufactured by|made by)[:\s]+([A-Z][A-Za-z0-9\s&,.-]{2,40})",
-        text_sample,
-        re.IGNORECASE,
-    )
+    brand_pattern = r"FUJIFILM|SIEMENS|GE|PHILIPS|CANON|RICOH|KONICA|MINOLTA|AGFA|CARESTREAM|KODAK|VARIAN|TOSHIBA|HITACHI|OLYMPUS|PENTAX|ZEISS|CARL ZEISS"
+    mfr_match = re.search(brand_pattern, text_sample, re.IGNORECASE)
     if mfr_match:
-        manufacturer = mfr_match.group(1).strip().rstrip(".,")
+        manufacturer = mfr_match.group().strip()
 
-    # Model: look for "Model", "Model No", "Part No", "REF" patterns
+    # Model: look for common patterns like FDR-1000, Model X, etc.
     model = None
-    model_match = re.search(
-        r"(?:model\s*(?:no\.?|number)?|part\s*(?:no\.?|number)?|ref\.?)[:\s#]+([A-Z0-9][A-Za-z0-9\-_/. ]{1,30})",
-        text_sample,
-        re.IGNORECASE,
-    )
+    # Try equipment-specific patterns first (e.g., FDR-1000, FSX-100)
+    model_match = re.search(r"(?:FDR|FSX|DRX|AXIOM)-[\d/\-A-Z]+", text_sample, re.IGNORECASE)
+    if not model_match:
+        # Fall back to generic Model/Ref patterns
+        model_match = re.search(
+            r"(?:model\s*(?:no\.?|number)?|part\s*(?:no\.?|number)?|ref\.?)[:\s#]+([A-Z0-9][A-Za-z0-9\-_/. ]{1,30})",
+            text_sample,
+            re.IGNORECASE,
+        )
     if model_match:
-        model = model_match.group(1).strip()
+        model = model_match.group(1) if model_match.lastindex else model_match.group()
+        model = model.strip()
 
     # Equipment type: scan for keyword matches
     equipment_type = None
