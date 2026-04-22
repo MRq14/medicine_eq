@@ -78,10 +78,11 @@ async def search(request: SearchRequest):
 
 
 @app.post("/ingest", response_model=IngestResponse)
-async def ingest(file: UploadFile = File(...)):
+async def ingest(file: UploadFile = File(...), brand: Optional[str] = None):
     """
     Upload and ingest a medical equipment PDF.
-    Parses, chunks, embeds, and stores in ChromaDB.
+    brand: brand name, e.g. 'fuji', 'ge', 'philips' — determines which collection to store in.
+    If omitted, falls back to 'general'.
     """
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted")
@@ -92,7 +93,7 @@ async def ingest(file: UploadFile = File(...)):
             tmp.write(content)
             tmp.flush()
 
-            result = ingest_pdf(tmp.name)
+            result = ingest_pdf(tmp.name, brand=brand)
             os.unlink(tmp.name)
 
             return IngestResponse(
@@ -116,7 +117,7 @@ async def list_documents():
         total_chunks = 0
         total_documents = 0
 
-        for collection_name in list_collection_names(include_legacy=True, include_existing=True):
+        for collection_name in list_collection_names(include_existing=True):
             collection = get_chroma_collection(collection_name)
             results = collection.get(include=["metadatas"])
             ids = results.get("ids") or []
@@ -150,6 +151,21 @@ async def list_documents():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch documents: {str(e)}")
+
+
+@app.get("/collections")
+async def list_collections():
+    """
+    List all available collections (brands).
+    """
+    try:
+        collection_names = list_collection_names(include_existing=True)
+        return {
+            "collections": collection_names,
+            "count": len(collection_names)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list collections: {str(e)}")
 
 
 @app.get("/health")

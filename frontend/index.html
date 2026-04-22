@@ -51,6 +51,46 @@
             margin-bottom: 40px;
         }
 
+        .brand-filter {
+            margin-bottom: 20px;
+        }
+
+        .brand-filter label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .brand-tabs {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .brand-tab {
+            padding: 8px 16px;
+            border: 2px solid #e0e0e0;
+            background: white;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 500;
+            color: #555;
+            font-size: 0.9rem;
+        }
+
+        .brand-tab:hover {
+            border-color: #667eea;
+            color: #667eea;
+        }
+
+        .brand-tab.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
         .search-box {
             display: flex;
             gap: 10px;
@@ -232,27 +272,44 @@
             color: #333;
         }
 
-        .doc-item {
-            background: #f9f9f9;
-            padding: 15px;
+        .brand-section {
+            margin-bottom: 30px;
+            border: 1px solid #e0e0e0;
             border-radius: 8px;
-            margin-bottom: 10px;
+            padding: 20px;
+            background: #fafafa;
+        }
+
+        .brand-section-title {
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+        }
+
+        .doc-item {
+            background: white;
+            padding: 12px 15px;
+            border-radius: 6px;
+            margin-bottom: 8px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            border: 1px solid #e0e0e0;
         }
 
         .doc-name {
-            font-weight: 600;
+            font-weight: 500;
             color: #333;
+            font-size: 0.95rem;
         }
 
         .doc-count {
             background: #667eea;
             color: white;
-            padding: 4px 12px;
+            padding: 3px 10px;
             border-radius: 20px;
-            font-size: 0.85rem;
+            font-size: 0.8rem;
         }
 
         .loading {
@@ -272,12 +329,19 @@
     <div class="container">
         <header>
             <h1>🏥 Medical Equipment RAG</h1>
-            <p class="subtitle">Search medical equipment service documentation</p>
+            <p class="subtitle">Search medical equipment documentation by brand</p>
         </header>
 
         <div class="main-panel">
             <div class="search-section">
                 <div id="status" class="status"></div>
+
+                <div class="brand-filter">
+                    <label>Filter by Brand:</label>
+                    <div class="brand-tabs" id="brandTabs">
+                        <div class="brand-tab active" onclick="setSelectedBrand(null)">All Brands</div>
+                    </div>
+                </div>
 
                 <div class="search-box">
                     <input type="text" id="query" placeholder="Search medical equipment docs..." />
@@ -291,6 +355,12 @@
 
             <div class="ingest-section">
                 <h3 style="margin-bottom: 15px; color: #333;">Upload Medical Equipment PDF</h3>
+                <div style="margin-bottom: 15px;">
+                    <label style="display:block; margin-bottom:6px; font-weight:600; color:#333;">Brand:</label>
+                    <select id="uploadBrand" style="padding:10px 14px; border:2px solid #e0e0e0; border-radius:8px; font-size:1rem; width:100%; max-width:300px;">
+                        <option value="">-- select brand --</option>
+                    </select>
+                </div>
                 <div class="ingest-box">
                     <label>
                         <div class="ingest-icon">📄</div>
@@ -303,13 +373,69 @@
         </div>
 
         <div class="documents-section">
-            <h2>📚 Ingested Documents</h2>
+            <h2>📚 Ingested Documents by Brand</h2>
             <div id="documents"></div>
         </div>
     </div>
 
     <script>
         const API_BASE = 'http://localhost:8000';
+        let selectedBrand = null;
+        let brandCollections = {};
+
+        async function loadCollections() {
+            try {
+                const response = await fetch(`${API_BASE}/collections`);
+                if (!response.ok) {
+                    console.error('Failed to load collections');
+                    return;
+                }
+                const data = await response.json();
+
+                // Extract brand names from collection names (e.g., medical_docs_fuji → fuji)
+                const brands = new Set();
+                for (const name of data.collections || []) {
+                    if (name.startsWith('medical_docs_')) {
+                        const brand = name.replace('medical_docs_', '');
+                        if (brand !== 'general') {
+                            brands.add(brand);
+                        }
+                    }
+                }
+
+                // Update brand tabs
+                const brandTabs = document.getElementById('brandTabs');
+                const tabs = [
+                    '<div class="brand-tab active" onclick="setSelectedBrand(null, this)">All Brands</div>'
+                ];
+                for (const brand of Array.from(brands).sort()) {
+                    const displayBrand = brand.replace(/_/g, ' ').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                    tabs.push(`<div class="brand-tab" onclick="setSelectedBrand('${brand}', this)">${displayBrand}</div>`);
+                }
+                brandTabs.innerHTML = tabs.join('');
+
+                // Update upload brand dropdown
+                const uploadBrand = document.getElementById('uploadBrand');
+                uploadBrand.innerHTML = '<option value="">-- select brand --</option>';
+                for (const brand of Array.from(brands).sort()) {
+                    const displayBrand = brand.replace(/_/g, ' ').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                    uploadBrand.innerHTML += `<option value="${brand}">${displayBrand}</option>`;
+                }
+
+                // Store for later use
+                brandCollections = Object.fromEntries(
+                    Array.from(brands).map(brand => [`medical_docs_${brand}`, brand])
+                );
+            } catch (error) {
+                console.error('Error loading collections:', error);
+            }
+        }
+
+        function setSelectedBrand(brand, el) {
+            selectedBrand = brand;
+            document.querySelectorAll('.brand-tab').forEach(tab => tab.classList.remove('active'));
+            el.classList.add('active');
+        }
 
         async function search() {
             const query = document.getElementById('query').value.trim();
@@ -325,10 +451,15 @@
             results.innerHTML = '';
 
             try {
+                const payload = { query, top_k: 5 };
+                if (selectedBrand) {
+                    payload.collection_name = `medical_docs_${selectedBrand}`;
+                }
+
                 const response = await fetch(`${API_BASE}/search`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ query, top_k: 5 })
+                    body: JSON.stringify(payload)
                 });
 
                 if (!response.ok) {
@@ -351,11 +482,9 @@
                         </div>
                         <div class="result-text">${escapeHtml(result.text)}</div>
                         <div class="result-meta">
-                            <span class="tag">Equipment: ${escapeHtml(result.metadata.equipment_type || 'N/A')}</span>
-                            <span class="tag">Doc: ${escapeHtml(result.metadata.document_type || 'N/A')}</span>
-                            <span class="tag">Collection: ${escapeHtml(result.collection_name || 'N/A')}</span>
-                            <span class="tag">Group: ${escapeHtml(result.metadata.doc_group || 'N/A')}</span>
-                            <span class="score">BM25: ${(result.bm25_score || 0).toFixed(2)}</span>
+                            <span class="tag">Brand: ${escapeHtml(result.collection_name?.replace('medical_docs_', '').replace(/_/g, ' ').toUpperCase() || 'N/A')}</span>
+                            <span class="tag">Doc: ${escapeHtml(result.metadata.doc_name || 'N/A')}</span>
+                            ${result.bm25_score ? `<span class="score">BM25: ${(result.bm25_score).toFixed(2)}</span>` : ''}
                         </div>
                     </div>
                 `).join('');
@@ -370,6 +499,12 @@
             const file = event.target.files[0];
             if (!file) return;
 
+            const brand = document.getElementById('uploadBrand').value;
+            if (!brand) {
+                document.getElementById('ingestStatus').innerHTML = '<div class="status show error">Select a brand before uploading</div>';
+                return;
+            }
+
             const formData = new FormData();
             formData.append('file', file);
 
@@ -377,7 +512,7 @@
             statusDiv.innerHTML = '<div class="status show info">Uploading and processing...</div>';
 
             try {
-                const response = await fetch(`${API_BASE}/ingest`, {
+                const response = await fetch(`${API_BASE}/ingest?brand=${encodeURIComponent(brand)}`, {
                     method: 'POST',
                     body: formData
                 });
@@ -388,10 +523,12 @@
                 }
 
                 const data = await response.json();
-                statusDiv.innerHTML = `<div class="status show success">✓ Ingested ${data.chunks_ingested} chunks from ${data.filename}</div>`;
+                const brand = data.doc_group || 'unknown';
+                statusDiv.innerHTML = `<div class="status show success">✓ Ingested ${data.chunks_ingested} chunks from ${data.filename} (Brand: ${brand})</div>`;
                 document.getElementById('file').value = '';
 
-                // Refresh documents list
+                // Refresh collections and documents
+                await loadCollections();
                 loadDocuments();
             } catch (error) {
                 statusDiv.innerHTML = `<div class="status show error">✗ ${error.message}</div>`;
@@ -411,19 +548,36 @@
                     return;
                 }
 
-                docs.innerHTML = data.documents.map(doc => `
-                    <div class="doc-item">
-                        <div>
-                            <div class="doc-name">${escapeHtml(doc.doc_name || doc.metadata.doc_name || 'unknown')}</div>
-                            <div style="font-size: 0.85rem; color: #666; margin-top: 5px;">
-                                Collection: ${escapeHtml(doc.collection_name || 'N/A')} ·
-                                Group: ${escapeHtml(doc.doc_group || 'N/A')} ·
-                                Type: ${escapeHtml(doc.metadata.document_type || 'N/A')}
-                            </div>
+                // Group by collection (brand)
+                const grouped = {};
+                for (const doc of data.documents) {
+                    const brand = doc.collection_name || 'general';
+                    if (!grouped[brand]) {
+                        grouped[brand] = [];
+                    }
+                    grouped[brand].push(doc);
+                }
+
+                // Render grouped by brand
+                let html = '';
+                for (const [brand, brandDocs] of Object.entries(grouped).sort()) {
+                    const displayBrand = brand.replace('medical_docs_', '').replace(/_/g, ' ').toUpperCase();
+                    html += `
+                        <div class="brand-section">
+                            <div class="brand-section-title">${escapeHtml(displayBrand)}</div>
+                            ${brandDocs.map(doc => `
+                                <div class="doc-item">
+                                    <div>
+                                        <div class="doc-name">${escapeHtml(doc.doc_name)}</div>
+                                        <div style="font-size: 0.8rem; color: #666; margin-top: 4px;">Type: ${escapeHtml(doc.metadata.document_type || 'N/A')}</div>
+                                    </div>
+                                    <div class="doc-count">${doc.chunk_count} chunks</div>
+                                </div>
+                            `).join('')}
                         </div>
-                        <div class="doc-count">${doc.chunk_count} chunks</div>
-                    </div>
-                `).join('');
+                    `;
+                }
+                docs.innerHTML = html;
             } catch (error) {
                 console.error('Error loading documents:', error);
             }
@@ -441,7 +595,7 @@
             return div.innerHTML;
         }
 
-        // Allow drag and drop
+        // Drag and drop
         const ingestBox = document.querySelector('.ingest-box');
         ingestBox.addEventListener('dragover', e => {
             e.preventDefault();
@@ -463,8 +617,11 @@
             }
         });
 
-        // Load documents on page load
-        document.addEventListener('DOMContentLoaded', loadDocuments);
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadCollections();
+            loadDocuments();
+        });
 
         // Allow Enter to search
         document.getElementById('query').addEventListener('keypress', e => {

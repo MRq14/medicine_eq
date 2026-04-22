@@ -51,7 +51,7 @@ def _resolve_collection_names(
 ) -> list[str]:
     if collection_name:
         return [collection_name]
-    return list_collection_names(include_legacy=True, include_existing=True)
+    return list_collection_names(include_existing=True)
 
 
 @dataclass
@@ -73,7 +73,7 @@ def rebuild_bm25_index(collection_names: list[str] | None = None) -> int:
     Returns number of indexed chunks.
     """
     if collection_names is None:
-        collection_names = list_collection_names(include_legacy=True, include_existing=True)
+        collection_names = list_collection_names(include_existing=True)
 
     normalized = tuple(sorted(set(collection_names)))
 

@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Any
 
 from chromadb import CloudClient, PersistentClient
 from chromadb.api import ClientAPI
@@ -13,9 +12,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 CHROMA_DB_PATH = Path("./chroma_db")
-LEGACY_COLLECTION_NAME = "medical_docs"
-COLLECTION_PREFIX = "medical_docs_"
-COLLECTION_GENERAL = "medical_docs_general"
 DOCS_ROOT = Path("docs")
 UPLOADS_ROOT = Path("data/uploads")
 CHROMA_CLOUD_TENANT = os.getenv("CHROMA_CLOUD_TENANT", "default")
@@ -23,8 +19,6 @@ CHROMA_CLOUD_DATABASE = os.getenv("CHROMA_CLOUD_DATABASE", "MedEq")
 
 _client_cache: ClientAPI | None = None
 _collection_cache: dict[str, Collection] = {}
-
-DEFAULT_COLLECTION_NAMES = [COLLECTION_GENERAL]
 
 
 def _is_cloud_enabled() -> bool:
@@ -39,7 +33,7 @@ def get_chroma_client(path: str | Path = CHROMA_DB_PATH) -> ClientAPI:
             _client_cache = CloudClient(
                 api_key=api_key,
                 tenant=CHROMA_CLOUD_TENANT,
-                database=CHROMA_CLOUD_DATABASE
+                database=CHROMA_CLOUD_DATABASE,
             )
         else:
             db_path = Path(path)
@@ -49,78 +43,72 @@ def get_chroma_client(path: str | Path = CHROMA_DB_PATH) -> ClientAPI:
 
 
 def slugify(value: str | None, default: str = "general") -> str:
+    """Convert folder name to a valid collection name. 'Fuji Amulet' → 'Fuji_Amulet'"""
     if not value:
         return default
-    slug = re.sub(r"[^a-zA-Z0-9]+", "_", value.strip().lower()).strip("_")
+    slug = re.sub(r"[^a-zA-Z0-9]+", "_", value.strip()).strip("_")
     return slug or default
 
 
-def collection_name_from_group(doc_group: str | None) -> str:
-    group_slug = slugify(doc_group, default="general")
-    return f"{COLLECTION_PREFIX}{group_slug}"
-
-
-def resolve_collection_name_for_file(file_path: Path, metadata: dict[str, Any] | None = None) -> str:
-    group = infer_doc_group(file_path, metadata=metadata)
-    return collection_name_from_group(group)
-
-
-def get_chroma_collection(name: str = COLLECTION_GENERAL) -> Collection:
+def get_chroma_collection(name: str) -> Collection:
     if name not in _collection_cache:
         client = get_chroma_client()
         _collection_cache[name] = client.get_or_create_collection(name=name)
     return _collection_cache[name]
 
 
-def list_collection_names(include_legacy: bool = True, include_existing: bool = True) -> list[str]:
-    names: set[str] = set(DEFAULT_COLLECTION_NAMES)
-    if include_legacy:
-        names.add(LEGACY_COLLECTION_NAME)
+def list_collection_names(include_existing: bool = True) -> list[str]:
+    """
+    List collection names from folder structure + existing cloud collections.
+    Folder name → collection name directly (e.g. 'Fuji Amulet' → 'Fuji_Amulet').
+    """
+    names: set[str] = set()
 
+    # docs/[Brand]/ folders
     if DOCS_ROOT.exists() and DOCS_ROOT.is_dir():
         for subdir in DOCS_ROOT.iterdir():
             if subdir.is_dir():
-                names.add(collection_name_from_group(subdir.name))
+                names.add(slugify(subdir.name))
 
+    # data/uploads/[Brand]/ folders
     if UPLOADS_ROOT.exists() and UPLOADS_ROOT.is_dir():
-        names.add(collection_name_from_group("uploads"))
+        for brand_dir in UPLOADS_ROOT.iterdir():
+            if brand_dir.is_dir():
+                names.add(slugify(brand_dir.name))
 
     if include_existing:
         try:
             client = get_chroma_client()
-            existing = client.list_collections()
-            for item in existing:
-                if isinstance(item, str):
-                    names.add(item)
-                else:
-                    maybe_name = getattr(item, "name", None)
-                    if isinstance(maybe_name, str):
-                        names.add(maybe_name)
+            for item in client.list_collections():
+                col_name = item if isinstance(item, str) else getattr(item, "name", None)
+                if col_name:
+                    names.add(col_name)
         except Exception:
-            # Ignore discovery failures and fall back to known collection names.
             pass
 
     return sorted(names)
 
 
-def infer_doc_group(file_path: Path, metadata: dict[str, Any] | None = None) -> str:
+def infer_collection_name(file_path: Path) -> str:
+    """
+    Derive collection name from file path.
+    data/uploads/Fuji Amulet/file.pdf → 'Fuji_Amulet'
+    docs/Fuji Amulet/file.pdf        → 'Fuji_Amulet'
+    """
     file_path = Path(file_path)
-    try:
-        rel = file_path.resolve().relative_to(DOCS_ROOT.resolve())
-        if rel.parts:
-            return slugify(rel.parts[0], default="general")
-    except Exception:
-        pass
 
-    try:
-        file_path.resolve().relative_to(UPLOADS_ROOT.resolve())
-        return "uploads"
-    except Exception:
-        pass
+    for root in (UPLOADS_ROOT, DOCS_ROOT):
+        try:
+            rel = file_path.resolve().relative_to(root.resolve())
+            if rel.parts:
+                return slugify(rel.parts[0])
+        except Exception:
+            pass
 
-    parent_slug = slugify(file_path.parent.name, default="")
-    if parent_slug and parent_slug not in {"docs", "data", "uploads"}:
-        return parent_slug
+    # Fallback: parent folder name
+    parent = slugify(file_path.parent.name, default="")
+    if parent and parent not in {"docs", "data", "uploads"}:
+        return parent
 
     return "general"
 

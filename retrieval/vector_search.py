@@ -70,7 +70,7 @@ def vector_search(
     if collection_name:
         collection_names = [collection_name]
     else:
-        collection_names = list_collection_names(include_legacy=True, include_existing=True)
+        collection_names = list_collection_names(include_existing=True)
 
     query_embedding = _embed_query(query)
     merged: list[dict[str, Any]] = []
