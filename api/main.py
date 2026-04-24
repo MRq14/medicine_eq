@@ -1,14 +1,31 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Any, Optional
 import tempfile
 import os
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
+_executor = ThreadPoolExecutor(max_workers=4)
+
+
+from openai import AsyncOpenAI
 from pipeline.ingestion import ingest_pdf
 from retrieval import hybrid_search
 from pipeline.config import get_chroma_collection, list_collection_names
 
+_openai = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+
 app = FastAPI(title="Medical Equipment RAG", version="1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class SearchRequest(BaseModel):
@@ -22,6 +39,7 @@ class SearchResult(BaseModel):
     chunk_id: str
     collection_name: Optional[str] = None
     text: str
+    original_text: Optional[str] = None
     metadata: dict
     bm25_score: Optional[float] = None
     fusion_rank: int
@@ -31,6 +49,18 @@ class SearchResponse(BaseModel):
     query: str
     results: list[SearchResult]
     count: int
+
+
+class AskRequest(BaseModel):
+    query: str
+    top_k: int = 5
+    collection_name: Optional[str] = None
+
+
+class AskResponse(BaseModel):
+    query: str
+    answer: str
+    sources: list[SearchResult]
 
 
 class IngestResponse(BaseModel):
@@ -45,17 +75,22 @@ class IngestResponse(BaseModel):
 async def search(request: SearchRequest):
     """
     Hybrid search across vector embeddings and BM25 sparse retrieval.
+    Supports Russian queries - automatically translates to English for search,
+    then translates results back to Russian.
     Returns top-k results ranked by Reciprocal Rank Fusion.
     Optional filters: {manufacturer, model, equipment_type, document_type}
     """
     if not request.query.strip():
         raise HTTPException(status_code=400, detail="Query cannot be empty")
 
-    results = hybrid_search(
-        query=request.query,
-        top_k=request.top_k,
-        collection_name=request.collection_name,
-        filters=request.filters or {}
+    loop = asyncio.get_event_loop()
+    results = await loop.run_in_executor(
+        _executor, lambda: hybrid_search(
+            query=request.query,
+            top_k=request.top_k,
+            collection_name=request.collection_name,
+            filters=request.filters or {}
+        )
     )
 
     formatted_results = [
@@ -63,6 +98,7 @@ async def search(request: SearchRequest):
             chunk_id=r["chunk_id"],
             collection_name=r.get("collection_name"),
             text=r["text"],
+            original_text=None,
             metadata=r["metadata"],
             bm25_score=r.get("bm25_score"),
             fusion_rank=i + 1
@@ -75,6 +111,71 @@ async def search(request: SearchRequest):
         results=formatted_results,
         count=len(formatted_results)
     )
+
+
+@app.post("/ask", response_model=AskResponse)
+async def ask(request: AskRequest):
+    """
+    Retrieve relevant chunks then synthesize a Russian answer with gpt-4o-mini.
+    """
+    if not request.query.strip():
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
+
+    loop = asyncio.get_event_loop()
+    results = await loop.run_in_executor(
+        _executor, lambda: hybrid_search(
+            query=request.query,
+            top_k=request.top_k,
+            collection_name=request.collection_name,
+            filters={},
+        )
+    )
+
+    if not results:
+        return AskResponse(query=request.query, answer="Информация не найдена в загруженных документах.", sources=[])
+
+    context = "\n\n---\n\n".join(
+        f"[Источник {i+1}: {r['metadata'].get('doc_name','?')}, стр.{r['metadata'].get('chunk_index','?')}]\n{r['text']}"
+        for i, r in enumerate(results)
+    )
+
+    completion = await _openai.chat.completions.create(
+        model="gpt-4o-mini",
+        temperature=0.2,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "Ты — технический ассистент по сервисному обслуживанию медицинского оборудования. "
+                    "Отвечай ТОЛЬКО на основе предоставленных фрагментов документации. "
+                    "Отвечай на русском языке. Будь конкретным и точным. "
+                    "Если в документации нет ответа — так и скажи. "
+                    "Не придумывай информацию."
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"Вопрос: {request.query}\n\nФрагменты документации:\n{context}",
+            },
+        ],
+    )
+
+    answer = completion.choices[0].message.content.strip()
+
+    sources = [
+        SearchResult(
+            chunk_id=r["chunk_id"],
+            collection_name=r.get("collection_name"),
+            text=r["text"],
+            original_text=None,
+            metadata=r["metadata"],
+            bm25_score=r.get("bm25_score"),
+            fusion_rank=i + 1,
+        )
+        for i, r in enumerate(results)
+    ]
+
+    return AskResponse(query=request.query, answer=answer, sources=sources)
 
 
 @app.post("/ingest", response_model=IngestResponse)
@@ -118,8 +219,11 @@ async def list_documents():
         total_documents = 0
 
         for collection_name in list_collection_names(include_existing=True):
-            collection = get_chroma_collection(collection_name)
-            results = collection.get(include=["metadatas"])
+            try:
+                collection = get_chroma_collection(collection_name)
+                results = collection.get(include=["metadatas"])
+            except Exception:
+                continue
             ids = results.get("ids") or []
             metadatas = results.get("metadatas") or []
             total_chunks += len(ids)

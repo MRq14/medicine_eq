@@ -1,632 +1,544 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Medical Equipment RAG Search</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Medical Equipment RAG</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f0f2f5;
+      min-height: 100vh;
+      color: #1a1a1a;
+    }
 
-        .container {
-            max-width: 1000px;
-            margin: 0 auto;
-        }
+    .topbar {
+      background: #1e3a5f;
+      color: #fff;
+      padding: 14px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 2px 8px rgba(0,0,0,.25);
+    }
+    .topbar-title { font-size: 1.2rem; font-weight: 700; }
+    .topbar-sub { opacity: .65; font-weight: 400; font-size: .88rem; margin-top: 2px; }
+    .lang-switch { display: flex; gap: 6px; }
+    .lang-switch button {
+      padding: 5px 14px;
+      border: 1px solid rgba(255,255,255,.4);
+      background: transparent;
+      color: #fff;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: .85rem;
+      transition: background .2s;
+    }
+    .lang-switch button.active { background: #fff; color: #1e3a5f; font-weight: 600; border-color: #fff; }
 
-        header {
-            text-align: center;
-            color: white;
-            margin-bottom: 40px;
-        }
+    .layout {
+      display: grid;
+      grid-template-columns: 290px 1fr;
+      min-height: calc(100vh - 60px);
+    }
 
-        h1 {
-            font-size: 2.5rem;
-            margin-bottom: 10px;
-        }
+    /* Sidebar */
+    .sidebar {
+      background: #fff;
+      border-right: 1px solid #e0e4ea;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .sidebar-section { padding: 18px 16px; border-bottom: 1px solid #f0f2f5; }
+    .sidebar-label {
+      font-size: .7rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .8px; color: #9ca3af; margin-bottom: 10px;
+    }
 
-        .subtitle {
-            font-size: 1rem;
-            opacity: 0.9;
-        }
+    .brand-select {
+      width: 100%; padding: 8px 10px;
+      border: 1px solid #d1d5db; border-radius: 6px;
+      font-size: .88rem; margin-bottom: 10px; background: #fff;
+    }
 
-        .main-panel {
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            padding: 40px;
-            margin-bottom: 30px;
-        }
+    .upload-zone {
+      border: 2px dashed #c5cdd8; border-radius: 8px;
+      padding: 18px 12px; text-align: center;
+      cursor: pointer; transition: all .2s; background: #f8fafc;
+    }
+    .upload-zone:hover, .upload-zone.drag { border-color: #2563eb; background: #eff6ff; }
+    .upload-zone input { display: none; }
+    .upload-icon { font-size: 1.8rem; margin-bottom: 6px; }
+    .upload-zone p { font-size: .8rem; color: #6b7280; line-height: 1.4; }
 
-        .search-section {
-            margin-bottom: 40px;
-        }
+    .upload-msg {
+      margin-top: 8px; font-size: .8rem; border-radius: 6px;
+      padding: 7px 10px; display: none;
+    }
+    .upload-msg.show { display: block; }
+    .upload-msg.ok  { background: #d1fae5; color: #065f46; }
+    .upload-msg.err { background: #fee2e2; color: #991b1b; }
+    .upload-msg.info { background: #dbeafe; color: #1e40af; }
 
-        .brand-filter {
-            margin-bottom: 20px;
-        }
+    .doc-list { flex: 1; overflow-y: auto; padding: 10px 12px; }
+    .doc-group { margin-bottom: 14px; }
+    .doc-group-name {
+      font-size: .68rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .7px; color: #9ca3af; margin-bottom: 6px; padding-left: 2px;
+    }
+    .doc-card {
+      background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 6px;
+      padding: 8px 10px; margin-bottom: 5px;
+      display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    }
+    .doc-name { font-size: .8rem; font-weight: 500; color: #111827; word-break: break-all; }
+    .doc-sub  { font-size: .7rem; color: #9ca3af; margin-top: 1px; }
+    .doc-badge {
+      background: #2563eb; color: #fff; font-size: .67rem;
+      font-weight: 600; padding: 2px 7px; border-radius: 10px; white-space: nowrap;
+    }
+    .doc-list-empty { color: #9ca3af; font-size: .82rem; text-align: center; padding: 20px 0; }
 
-        .brand-filter label {
-            display: block;
-            margin-bottom: 10px;
-            font-weight: 600;
-            color: #333;
-        }
+    /* Main */
+    .main { display: flex; flex-direction: column; }
 
-        .brand-tabs {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
+    .search-bar {
+      background: #fff; border-bottom: 1px solid #e0e4ea;
+      padding: 14px 24px; display: flex; flex-direction: column; gap: 10px;
+    }
+    .brand-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+    .brand-tab {
+      padding: 4px 14px; border: 1px solid #d1d5db; border-radius: 20px;
+      background: #fff; font-size: .8rem; cursor: pointer; color: #374151; transition: all .15s;
+    }
+    .brand-tab:hover { border-color: #2563eb; color: #2563eb; }
+    .brand-tab.active { background: #2563eb; color: #fff; border-color: #2563eb; }
 
-        .brand-tab {
-            padding: 8px 16px;
-            border: 2px solid #e0e0e0;
-            background: white;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.3s;
-            font-weight: 500;
-            color: #555;
-            font-size: 0.9rem;
-        }
+    .search-row { display: flex; gap: 10px; }
+    .search-input {
+      flex: 1; padding: 10px 14px; border: 1.5px solid #d1d5db; border-radius: 8px;
+      font-size: .95rem; outline: none; transition: border .15s;
+    }
+    .search-input:focus { border-color: #2563eb; }
+    .search-btn {
+      padding: 10px 26px; background: #2563eb; color: #fff; border: none;
+      border-radius: 8px; font-size: .95rem; font-weight: 600; cursor: pointer; transition: background .15s;
+    }
+    .search-btn:hover { background: #1d4ed8; }
+    .search-btn:disabled { background: #93c5fd; cursor: not-allowed; }
 
-        .brand-tab:hover {
-            border-color: #667eea;
-            color: #667eea;
-        }
+    .results-area { flex: 1; padding: 18px 24px; overflow-y: auto; }
 
-        .brand-tab.active {
-            background: #667eea;
-            color: white;
-            border-color: #667eea;
-        }
+    .placeholder {
+      text-align: center; color: #9ca3af; padding: 60px 0; font-size: .9rem;
+    }
+    .placeholder .icon { font-size: 2.5rem; margin-bottom: 10px; }
 
-        .search-box {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
+    .spinner {
+      display: none; text-align: center; padding: 40px 0;
+    }
+    .spinner.show { display: block; }
+    .spin-ring {
+      width: 32px; height: 32px; border: 3px solid #e5e7eb; border-top-color: #2563eb;
+      border-radius: 50%; animation: spin .7s linear infinite; margin: 0 auto 10px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
-        input[type="text"] {
-            flex: 1;
-            padding: 14px 16px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 1rem;
-            transition: border-color 0.3s;
-        }
+    .result-card {
+      background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
+      padding: 16px 18px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.05);
+    }
+    .result-head {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      margin-bottom: 8px; gap: 10px;
+    }
+    .result-doc { font-size: .78rem; font-weight: 700; color: #2563eb; }
+    .result-rank {
+      font-size: .72rem; color: #6b7280; background: #f3f4f6;
+      padding: 2px 8px; border-radius: 10px; white-space: nowrap;
+    }
+    .result-text { font-size: .88rem; line-height: 1.65; color: #1f2937; margin-bottom: 10px; }
+    .result-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
+    .tag { font-size: .7rem; padding: 2px 7px; border-radius: 4px; background: #f3f4f6; color: #6b7280; }
 
-        input[type="text"]:focus {
-            outline: none;
-            border-color: #667eea;
-        }
+    .mode-switch { display: flex; gap: 6px; }
+    .mode-btn {
+      padding: 5px 14px; border: 1px solid #d1d5db; border-radius: 20px;
+      background: #fff; font-size: .82rem; cursor: pointer; color: #374151; transition: all .15s;
+    }
+    .mode-btn:hover { border-color: #2563eb; color: #2563eb; }
+    .mode-btn.active { background: #2563eb; color: #fff; border-color: #2563eb; }
 
-        button {
-            padding: 14px 32px;
-            background: #667eea;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: background 0.3s;
-        }
-
-        button:hover {
-            background: #5568d3;
-        }
-
-        button:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-        }
-
-        .ingest-section {
-            border-top: 1px solid #e0e0e0;
-            padding-top: 30px;
-        }
-
-        .ingest-box {
-            border: 2px dashed #667eea;
-            border-radius: 8px;
-            padding: 30px;
-            text-align: center;
-            background: #f9f9ff;
-            cursor: pointer;
-            transition: background 0.3s;
-        }
-
-        .ingest-box:hover {
-            background: #f0f0ff;
-        }
-
-        .ingest-box input {
-            display: none;
-        }
-
-        .ingest-box label {
-            cursor: pointer;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .ingest-icon {
-            font-size: 2.5rem;
-        }
-
-        .results {
-            margin-top: 30px;
-        }
-
-        .result-item {
-            background: #f9f9f9;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 15px;
-            transition: background 0.3s;
-        }
-
-        .result-item:hover {
-            background: #f0f0f0;
-        }
-
-        .result-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: start;
-            margin-bottom: 10px;
-        }
-
-        .result-title {
-            font-weight: 600;
-            color: #333;
-            flex: 1;
-        }
-
-        .result-rank {
-            background: #667eea;
-            color: white;
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 0.85rem;
-            font-weight: 600;
-        }
-
-        .result-text {
-            color: #555;
-            line-height: 1.6;
-            margin-bottom: 10px;
-        }
-
-        .result-meta {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            font-size: 0.85rem;
-        }
-
-        .tag {
-            background: #e0e0e0;
-            padding: 4px 10px;
-            border-radius: 4px;
-            color: #666;
-        }
-
-        .score {
-            color: #999;
-            font-size: 0.85rem;
-        }
-
-        .status {
-            padding: 12px 16px;
-            border-radius: 8px;
-            margin-bottom: 15px;
-            display: none;
-        }
-
-        .status.show {
-            display: block;
-        }
-
-        .status.success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-
-        .status.error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-
-        .status.info {
-            background: #d1ecf1;
-            color: #0c5460;
-            border: 1px solid #bee5eb;
-        }
-
-        .documents-section {
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            padding: 30px;
-        }
-
-        .documents-section h2 {
-            margin-bottom: 20px;
-            color: #333;
-        }
-
-        .brand-section {
-            margin-bottom: 30px;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
-            padding: 20px;
-            background: #fafafa;
-        }
-
-        .brand-section-title {
-            font-weight: 600;
-            color: #667eea;
-            margin-bottom: 15px;
-            font-size: 1.1rem;
-        }
-
-        .doc-item {
-            background: white;
-            padding: 12px 15px;
-            border-radius: 6px;
-            margin-bottom: 8px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border: 1px solid #e0e0e0;
-        }
-
-        .doc-name {
-            font-weight: 500;
-            color: #333;
-            font-size: 0.95rem;
-        }
-
-        .doc-count {
-            background: #667eea;
-            color: white;
-            padding: 3px 10px;
-            border-radius: 20px;
-            font-size: 0.8rem;
-        }
-
-        .loading {
-            display: none;
-            text-align: center;
-            color: #667eea;
-            font-weight: 600;
-            margin: 20px 0;
-        }
-
-        .loading.show {
-            display: block;
-        }
-    </style>
+    .answer-card {
+      background: #f0f7ff; border: 1.5px solid #bfdbfe; border-radius: 10px;
+      padding: 18px 20px; margin-bottom: 20px;
+    }
+    .answer-label {
+      font-size: .7rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .7px; color: #2563eb; margin-bottom: 8px;
+    }
+    .answer-text { font-size: .95rem; line-height: 1.75; color: #1e3a5f; white-space: pre-wrap; }
+    .sources-label {
+      font-size: .7rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .7px; color: #9ca3af; margin: 16px 0 8px;
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>🏥 Medical Equipment RAG</h1>
-            <p class="subtitle">Search medical equipment documentation by brand</p>
-        </header>
 
-        <div class="main-panel">
-            <div class="search-section">
-                <div id="status" class="status"></div>
+<div class="topbar">
+  <div>
+    <div class="topbar-title">🏥 Medical Equipment RAG</div>
+    <div class="topbar-sub" id="t-subtitle"></div>
+  </div>
+  <div class="lang-switch">
+    <button onclick="setLang('ru')" id="btn-ru">Русский</button>
+    <button onclick="setLang('en')" id="btn-en">English</button>
+  </div>
+</div>
 
-                <div class="brand-filter">
-                    <label>Filter by Brand:</label>
-                    <div class="brand-tabs" id="brandTabs">
-                        <div class="brand-tab active" onclick="setSelectedBrand(null)">All Brands</div>
-                    </div>
-                </div>
+<div class="layout">
 
-                <div class="search-box">
-                    <input type="text" id="query" placeholder="Search medical equipment docs..." />
-                    <button onclick="search()">Search</button>
-                </div>
-
-                <div id="loading" class="loading">Searching...</div>
-
-                <div id="results" class="results"></div>
-            </div>
-
-            <div class="ingest-section">
-                <h3 style="margin-bottom: 15px; color: #333;">Upload Medical Equipment PDF</h3>
-                <div style="margin-bottom: 15px;">
-                    <label style="display:block; margin-bottom:6px; font-weight:600; color:#333;">Brand:</label>
-                    <select id="uploadBrand" style="padding:10px 14px; border:2px solid #e0e0e0; border-radius:8px; font-size:1rem; width:100%; max-width:300px;">
-                        <option value="">-- select brand --</option>
-                    </select>
-                </div>
-                <div class="ingest-box">
-                    <label>
-                        <div class="ingest-icon">📄</div>
-                        <span>Click to select a PDF or drag and drop</span>
-                        <input type="file" id="file" accept=".pdf" onchange="handleFileSelect(event)" />
-                    </label>
-                </div>
-                <div id="ingestStatus" style="margin-top: 15px;"></div>
-            </div>
-        </div>
-
-        <div class="documents-section">
-            <h2>📚 Ingested Documents by Brand</h2>
-            <div id="documents"></div>
-        </div>
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label" id="t-upload-label"></div>
+      <select class="brand-select" id="upload-brand"></select>
+      <div class="upload-zone" id="drop-zone">
+        <label style="cursor:pointer;display:block;">
+          <div class="upload-icon">📄</div>
+          <p id="t-drop-hint"></p>
+          <input type="file" id="file-input" accept=".pdf,.PDF" />
+        </label>
+      </div>
+      <div class="upload-msg" id="upload-msg"></div>
     </div>
 
-    <script>
-        const API_BASE = 'http://localhost:8000';
-        let selectedBrand = null;
-        let brandCollections = {};
+    <div class="sidebar-section" style="padding-bottom:8px;">
+      <div class="sidebar-label" id="t-docs-label"></div>
+    </div>
+    <div class="doc-list" id="doc-list"></div>
+  </aside>
 
-        async function loadCollections() {
-            try {
-                const response = await fetch(`${API_BASE}/collections`);
-                if (!response.ok) {
-                    console.error('Failed to load collections');
-                    return;
-                }
-                const data = await response.json();
+  <main class="main">
+    <div class="search-bar">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div class="brand-tabs" id="brand-tabs"></div>
+        <div class="mode-switch">
+          <button class="mode-btn active" id="mode-search" onclick="setMode('search')">🔍 Search</button>
+          <button class="mode-btn" id="mode-ask" onclick="setMode('ask')">💬 Ask AI</button>
+        </div>
+      </div>
+      <div class="search-row">
+        <input class="search-input" id="query" type="text" />
+        <button class="search-btn" id="search-btn" onclick="doSearch()"></button>
+      </div>
+    </div>
+    <div class="results-area">
+      <div class="spinner" id="spinner"><div class="spin-ring"></div></div>
+      <div id="results">
+        <div class="placeholder">
+          <div class="icon">🔍</div>
+          <div id="t-placeholder"></div>
+        </div>
+      </div>
+    </div>
+  </main>
 
-                // Extract brand names from collection names (e.g., medical_docs_fuji → fuji)
-                const brands = new Set();
-                for (const name of data.collections || []) {
-                    if (name.startsWith('medical_docs_')) {
-                        const brand = name.replace('medical_docs_', '');
-                        if (brand !== 'general') {
-                            brands.add(brand);
-                        }
-                    }
-                }
+</div>
 
-                // Update brand tabs
-                const brandTabs = document.getElementById('brandTabs');
-                const tabs = [
-                    '<div class="brand-tab active" onclick="setSelectedBrand(null, this)">All Brands</div>'
-                ];
-                for (const brand of Array.from(brands).sort()) {
-                    const displayBrand = brand.replace(/_/g, ' ').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-                    tabs.push(`<div class="brand-tab" onclick="setSelectedBrand('${brand}', this)">${displayBrand}</div>`);
-                }
-                brandTabs.innerHTML = tabs.join('');
+<script>
+const API = 'http://localhost:8000';
+let lang = localStorage.getItem('lang') || 'ru';
+let selectedBrand = null;
+let mode = 'search'; // 'search' | 'ask'
 
-                // Update upload brand dropdown
-                const uploadBrand = document.getElementById('uploadBrand');
-                uploadBrand.innerHTML = '<option value="">-- select brand --</option>';
-                for (const brand of Array.from(brands).sort()) {
-                    const displayBrand = brand.replace(/_/g, ' ').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-                    uploadBrand.innerHTML += `<option value="${brand}">${displayBrand}</option>`;
-                }
+function setMode(m) {
+  mode = m;
+  document.getElementById('mode-search').classList.toggle('active', m === 'search');
+  document.getElementById('mode-ask').classList.toggle('active', m === 'ask');
+}
 
-                // Store for later use
-                brandCollections = Object.fromEntries(
-                    Array.from(brands).map(brand => [`medical_docs_${brand}`, brand])
-                );
-            } catch (error) {
-                console.error('Error loading collections:', error);
-            }
-        }
+const TR = {
+  ru: {
+    subtitle:     'Поиск по документации медицинского оборудования',
+    uploadLabel:  'Загрузить PDF',
+    brandDefault: '— выберите бренд —',
+    dropHint:     'Нажмите или перетащите PDF файл',
+    docsLabel:    'Загруженные документы',
+    docsEmpty:    'Нет загруженных документов',
+    tabAll:       'Все',
+    searchPlaceholder: 'Введите вопрос на русском...',
+    searchBtn:    'Поиск',
+    placeholder:  'Введите вопрос выше, чтобы найти нужную информацию',
+    searching:    'Поиск...',
+    noResults:    'Ничего не найдено',
+    noBrand:      'Выберите бренд перед загрузкой',
+    uploading:    'Загрузка и обработка...',
+    showOrig:     'Показать оригинал (EN)',
+    hideOrig:     'Скрыть оригинал',
+    chunks:       'фрагм.',
+  },
+  en: {
+    subtitle:     'Search medical equipment documentation',
+    uploadLabel:  'Upload PDF',
+    brandDefault: '— select brand —',
+    dropHint:     'Click or drag and drop a PDF file',
+    docsLabel:    'Ingested Documents',
+    docsEmpty:    'No documents yet',
+    tabAll:       'All',
+    searchPlaceholder: 'Type your question...',
+    searchBtn:    'Search',
+    placeholder:  'Enter a question above to search documentation',
+    searching:    'Searching...',
+    noResults:    'No results found',
+    noBrand:      'Select a brand before uploading',
+    uploading:    'Uploading and processing...',
+    showOrig:     'Show original (EN)',
+    hideOrig:     'Hide original',
+    chunks:       'chunks',
+  }
+};
 
-        function setSelectedBrand(brand, el) {
-            selectedBrand = brand;
-            document.querySelectorAll('.brand-tab').forEach(tab => tab.classList.remove('active'));
-            el.classList.add('active');
-        }
+function tr(k) { return TR[lang][k] ?? TR.en[k] ?? k; }
 
-        async function search() {
-            const query = document.getElementById('query').value.trim();
-            if (!query) {
-                showStatus('Enter a search query', 'error');
-                return;
-            }
+function setLang(l) {
+  lang = l;
+  localStorage.setItem('lang', l);
+  document.getElementById('btn-ru').classList.toggle('active', l === 'ru');
+  document.getElementById('btn-en').classList.toggle('active', l === 'en');
+  renderTranslations();
+}
 
-            const loading = document.getElementById('loading');
-            const results = document.getElementById('results');
+function renderTranslations() {
+  document.getElementById('t-subtitle').textContent    = tr('subtitle');
+  document.getElementById('t-upload-label').textContent = tr('uploadLabel');
+  document.getElementById('t-drop-hint').textContent   = tr('dropHint');
+  document.getElementById('t-docs-label').textContent  = tr('docsLabel');
+  document.getElementById('t-placeholder').textContent = tr('placeholder');
+  document.getElementById('query').placeholder         = tr('searchPlaceholder');
+  document.getElementById('search-btn').textContent    = tr('searchBtn');
+  // brand default option
+  const sel = document.getElementById('upload-brand');
+  if (sel.options[0]) sel.options[0].textContent = tr('brandDefault');
+}
 
-            loading.classList.add('show');
-            results.innerHTML = '';
+// ── Load sidebar data ──────────────────────────────────────
+async function loadSidebar() {
+  await Promise.all([loadBrands(), loadDocs()]);
+  renderTranslations(); // re-apply after DOM rebuild
+}
 
-            try {
-                const payload = { query, top_k: 5 };
-                if (selectedBrand) {
-                    payload.collection_name = `medical_docs_${selectedBrand}`;
-                }
+async function loadBrands() {
+  try {
+    const r = await fetch(`${API}/collections`);
+    const d = await r.json();
+    const cols = (d.collections || []).filter(c => c !== 'general').sort();
 
-                const response = await fetch(`${API_BASE}/search`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
+    // tabs
+    const tabs = document.getElementById('brand-tabs');
+    tabs.innerHTML = '';
+    const allBtn = document.createElement('button');
+    allBtn.className = 'brand-tab active';
+    allBtn.textContent = tr('tabAll');
+    allBtn.onclick = function() { selectBrand(null, this); };
+    tabs.appendChild(allBtn);
+    cols.forEach(col => {
+      const b = document.createElement('button');
+      b.className = 'brand-tab';
+      b.textContent = col.replace(/_/g, ' ');
+      b.onclick = function() { selectBrand(col, this); };
+      tabs.appendChild(b);
+    });
 
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Search failed');
-                }
+    // dropdown
+    const sel = document.getElementById('upload-brand');
+    sel.innerHTML = `<option value="">${tr('brandDefault')}</option>`;
+    cols.forEach(col => {
+      const o = document.createElement('option');
+      o.value = col;
+      o.textContent = col.replace(/_/g, ' ');
+      sel.appendChild(o);
+    });
+  } catch(e) { console.error('loadBrands', e); }
+}
 
-                const data = await response.json();
+async function loadDocs() {
+  const list = document.getElementById('doc-list');
+  try {
+    const r = await fetch(`${API}/documents`);
+    const d = await r.json();
+    const docs = d.documents || [];
 
-                if (data.results.length === 0) {
-                    results.innerHTML = '<p style="color: #999; text-align: center;">No results found</p>';
-                    return;
-                }
+    if (!docs.length) {
+      list.innerHTML = `<div class="doc-list-empty">${tr('docsEmpty')}</div>`;
+      return;
+    }
 
-                results.innerHTML = data.results.map(result => `
-                    <div class="result-item">
-                        <div class="result-header">
-                            <div class="result-title">${escapeHtml(result.text.substring(0, 100))}</div>
-                            <div class="result-rank">Rank #${result.fusion_rank}</div>
-                        </div>
-                        <div class="result-text">${escapeHtml(result.text)}</div>
-                        <div class="result-meta">
-                            <span class="tag">Brand: ${escapeHtml(result.collection_name?.replace('medical_docs_', '').replace(/_/g, ' ').toUpperCase() || 'N/A')}</span>
-                            <span class="tag">Doc: ${escapeHtml(result.metadata.doc_name || 'N/A')}</span>
-                            ${result.bm25_score ? `<span class="score">BM25: ${(result.bm25_score).toFixed(2)}</span>` : ''}
-                        </div>
-                    </div>
-                `).join('');
-            } catch (error) {
-                showStatus(`Search error: ${error.message}`, 'error');
-            } finally {
-                loading.classList.remove('show');
-            }
-        }
+    // group by collection
+    const groups = {};
+    docs.forEach(doc => {
+      const g = doc.collection_name || 'general';
+      (groups[g] = groups[g] || []).push(doc);
+    });
 
-        async function handleFileSelect(event) {
-            const file = event.target.files[0];
-            if (!file) return;
+    list.innerHTML = Object.entries(groups).sort().map(([g, gdocs]) => `
+      <div class="doc-group">
+        <div class="doc-group-name">${g.replace(/_/g,' ')}</div>
+        ${gdocs.map(doc => `
+          <div class="doc-card">
+            <div>
+              <div class="doc-name">${esc(doc.doc_name)}</div>
+              <div class="doc-sub">${esc(doc.metadata.document_type || doc.metadata.equipment_type || '')}</div>
+            </div>
+            <span class="doc-badge">${doc.chunk_count} ${tr('chunks')}</span>
+          </div>`).join('')}
+      </div>`).join('');
+  } catch(e) {
+    list.innerHTML = `<div class="doc-list-empty" style="color:#dc2626;">Error loading docs</div>`;
+    console.error('loadDocs', e);
+  }
+}
 
-            const brand = document.getElementById('uploadBrand').value;
-            if (!brand) {
-                document.getElementById('ingestStatus').innerHTML = '<div class="status show error">Select a brand before uploading</div>';
-                return;
-            }
+function selectBrand(col, el) {
+  selectedBrand = col;
+  document.querySelectorAll('.brand-tab').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+}
 
-            const formData = new FormData();
-            formData.append('file', file);
+// ── Search / Ask ───────────────────────────────────────────
+function renderSourceCards(list) {
+  return list.map(res => {
+    const brand   = (res.collection_name || '').replace(/_/g,' ');
+    const docType = res.metadata.document_type || res.metadata.equipment_type || '';
+    const model   = res.metadata.model || '';
+    return `
+      <div class="result-card">
+        <div class="result-head">
+          <div class="result-doc">📄 ${esc(res.metadata.doc_name || 'N/A')}</div>
+          <div class="result-rank">#${res.fusion_rank}</div>
+        </div>
+        <div class="result-text">${esc(res.text)}</div>
+        <div class="result-tags">
+          ${brand   ? `<span class="tag">${esc(brand)}</span>` : ''}
+          ${docType ? `<span class="tag">${esc(docType)}</span>` : ''}
+          ${model   ? `<span class="tag">${esc(model)}</span>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
 
-            const statusDiv = document.getElementById('ingestStatus');
-            statusDiv.innerHTML = '<div class="status show info">Uploading and processing...</div>';
+async function doSearch() {
+  const query = document.getElementById('query').value.trim();
+  if (!query) return;
 
-            try {
-                const response = await fetch(`${API_BASE}/ingest?brand=${encodeURIComponent(brand)}`, {
-                    method: 'POST',
-                    body: formData
-                });
+  const spinner = document.getElementById('spinner');
+  const results = document.getElementById('results');
+  const btn     = document.getElementById('search-btn');
 
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Ingest failed');
-                }
+  spinner.classList.add('show');
+  results.innerHTML = '';
+  btn.disabled = true;
 
-                const data = await response.json();
-                const brand = data.doc_group || 'unknown';
-                statusDiv.innerHTML = `<div class="status show success">✓ Ingested ${data.chunks_ingested} chunks from ${data.filename} (Brand: ${brand})</div>`;
-                document.getElementById('file').value = '';
+  try {
+    const payload = { query, top_k: 5 };
+    if (selectedBrand) payload.collection_name = selectedBrand;
 
-                // Refresh collections and documents
-                await loadCollections();
-                loadDocuments();
-            } catch (error) {
-                statusDiv.innerHTML = `<div class="status show error">✗ ${error.message}</div>`;
-            }
-        }
+    const endpoint = mode === 'ask' ? '/ask' : '/search';
+    const r = await fetch(`${API}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!r.ok) { const e = await r.json(); throw new Error(e.detail || 'Error'); }
 
-        async function loadDocuments() {
-            try {
-                const response = await fetch(`${API_BASE}/documents`);
-                if (!response.ok) throw new Error('Failed to fetch documents');
+    const data = await r.json();
+    const resultList = mode === 'ask' ? data.sources : data.results;
 
-                const data = await response.json();
-                const docs = document.getElementById('documents');
+    if (!resultList.length) {
+      results.innerHTML = `<div class="placeholder"><div class="icon">🤷</div>${tr('noResults')}</div>`;
+      return;
+    }
 
-                if (data.documents.length === 0) {
-                    docs.innerHTML = '<p style="color: #999;">No documents ingested yet</p>';
-                    return;
-                }
+    if (mode === 'ask') {
+      results.innerHTML = `
+        <div class="answer-card">
+          <div class="answer-label">💬 Ответ AI</div>
+          <div class="answer-text">${esc(data.answer)}</div>
+        </div>
+        <div class="sources-label">📄 Источники</div>
+        ${renderSourceCards(resultList)}`;
+      return;
+    }
 
-                // Group by collection (brand)
-                const grouped = {};
-                for (const doc of data.documents) {
-                    const brand = doc.collection_name || 'general';
-                    if (!grouped[brand]) {
-                        grouped[brand] = [];
-                    }
-                    grouped[brand].push(doc);
-                }
+    results.innerHTML = renderSourceCards(resultList);
 
-                // Render grouped by brand
-                let html = '';
-                for (const [brand, brandDocs] of Object.entries(grouped).sort()) {
-                    const displayBrand = brand.replace('medical_docs_', '').replace(/_/g, ' ').toUpperCase();
-                    html += `
-                        <div class="brand-section">
-                            <div class="brand-section-title">${escapeHtml(displayBrand)}</div>
-                            ${brandDocs.map(doc => `
-                                <div class="doc-item">
-                                    <div>
-                                        <div class="doc-name">${escapeHtml(doc.doc_name)}</div>
-                                        <div style="font-size: 0.8rem; color: #666; margin-top: 4px;">Type: ${escapeHtml(doc.metadata.document_type || 'N/A')}</div>
-                                    </div>
-                                    <div class="doc-count">${doc.chunk_count} chunks</div>
-                                </div>
-                            `).join('')}
-                        </div>
-                    `;
-                }
-                docs.innerHTML = html;
-            } catch (error) {
-                console.error('Error loading documents:', error);
-            }
-        }
+  } catch(e) {
+    results.innerHTML = `<div class="placeholder" style="color:#dc2626;">⚠️ ${esc(e.message)}</div>`;
+  } finally {
+    spinner.classList.remove('show');
+    btn.disabled = false;
+  }
+}
 
-        function showStatus(message, type) {
-            const status = document.getElementById('status');
-            status.textContent = message;
-            status.className = `status show ${type}`;
-        }
+function toggleOrig(btn) {
+  const block = btn.nextElementSibling;
+  const open  = block.classList.toggle('open');
+  btn.textContent = open ? tr('hideOrig') : tr('showOrig');
+}
 
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
+// ── Upload ─────────────────────────────────────────────────
+document.getElementById('file-input').addEventListener('change', e => {
+  if (e.target.files[0]) uploadFile(e.target.files[0]);
+});
 
-        // Drag and drop
-        const ingestBox = document.querySelector('.ingest-box');
-        ingestBox.addEventListener('dragover', e => {
-            e.preventDefault();
-            ingestBox.style.background = '#e0e0ff';
-        });
+const dz = document.getElementById('drop-zone');
+dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('drag'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('drag');
+  if (e.dataTransfer.files[0]) uploadFile(e.dataTransfer.files[0]);
+});
 
-        ingestBox.addEventListener('dragleave', () => {
-            ingestBox.style.background = '#f9f9ff';
-        });
+async function uploadFile(file) {
+  const brand = document.getElementById('upload-brand').value;
+  if (!brand) { showMsg(tr('noBrand'), 'err'); return; }
 
-        ingestBox.addEventListener('drop', e => {
-            e.preventDefault();
-            ingestBox.style.background = '#f9f9ff';
-            const file = e.dataTransfer.files[0];
-            if (file && file.type === 'application/pdf') {
-                const input = document.getElementById('file');
-                input.files = e.dataTransfer.files;
-                handleFileSelect({ target: { files: [file] } });
-            }
-        });
+  showMsg(tr('uploading'), 'info');
+  const form = new FormData();
+  form.append('file', file);
 
-        // Initialize
-        document.addEventListener('DOMContentLoaded', async () => {
-            await loadCollections();
-            loadDocuments();
-        });
+  try {
+    const r = await fetch(`${API}/ingest?brand=${encodeURIComponent(brand)}`, {
+      method: 'POST', body: form
+    });
+    if (!r.ok) { const e = await r.json(); throw new Error(e.detail || 'Ingest failed'); }
+    const d = await r.json();
+    showMsg(`✓ ${d.filename} — ${d.chunks_ingested} ${tr('chunks')}`, 'ok');
+    document.getElementById('file-input').value = '';
+    await loadSidebar();
+  } catch(e) { showMsg(`✗ ${e.message}`, 'err'); }
+}
 
-        // Allow Enter to search
-        document.getElementById('query').addEventListener('keypress', e => {
-            if (e.key === 'Enter') search();
-        });
-    </script>
+function showMsg(text, type) {
+  const el = document.getElementById('upload-msg');
+  el.textContent = text;
+  el.className = `upload-msg show ${type}`;
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+document.getElementById('query').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doSearch();
+});
+
+// ── Init ───────────────────────────────────────────────────
+setLang(lang);
+loadSidebar();
+</script>
 </body>
 </html>
