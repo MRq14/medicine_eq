@@ -84,14 +84,24 @@ async def search(request: SearchRequest):
         raise HTTPException(status_code=400, detail="Query cannot be empty")
 
     loop = asyncio.get_event_loop()
-    results = await loop.run_in_executor(
-        _executor, lambda: hybrid_search(
-            query=request.query,
-            top_k=request.top_k,
-            collection_name=request.collection_name,
-            filters=request.filters or {}
+    try:
+        results = await loop.run_in_executor(
+            _executor, lambda: hybrid_search(
+                query=request.query,
+                top_k=request.top_k,
+                collection_name=request.collection_name,
+                filters=request.filters or {}
+            )
         )
-    )
+    except KeyError as e:
+        if str(e).strip("'\"") == "OPENAI_API_KEY":
+            raise HTTPException(
+                status_code=500,
+                detail="OPENAI_API_KEY is not configured. Add it to .env before running search.",
+            )
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
     formatted_results = [
         SearchResult(
@@ -122,14 +132,24 @@ async def ask(request: AskRequest):
         raise HTTPException(status_code=400, detail="Query cannot be empty")
 
     loop = asyncio.get_event_loop()
-    results = await loop.run_in_executor(
-        _executor, lambda: hybrid_search(
-            query=request.query,
-            top_k=request.top_k,
-            collection_name=request.collection_name,
-            filters={},
+    try:
+        results = await loop.run_in_executor(
+            _executor, lambda: hybrid_search(
+                query=request.query,
+                top_k=request.top_k,
+                collection_name=request.collection_name,
+                filters={},
+            )
         )
-    )
+    except KeyError as e:
+        if str(e).strip("'\"") == "OPENAI_API_KEY":
+            raise HTTPException(
+                status_code=500,
+                detail="OPENAI_API_KEY is not configured. Add it to .env before running Ask AI.",
+            )
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ask failed during retrieval: {str(e)}")
 
     if not results:
         return AskResponse(query=request.query, answer="Информация не найдена в загруженных документах.", sources=[])
