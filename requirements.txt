@@ -1,6 +1,6 @@
-docling
+PyMuPDF
 chromadb
-sentence-transformers
+openai
 rank_bm25
 pydantic
 fastapi

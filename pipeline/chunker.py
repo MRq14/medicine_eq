@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
@@ -27,7 +27,6 @@ class DocumentChunk(BaseModel):
 
 
 def _estimate_tokens(text: str) -> int:
-    # Rough proxy for token count without external tokenizer dependency.
     return len(re.findall(r"\S+", text))
 
 
@@ -56,7 +55,7 @@ def _split_markdown_sections(markdown: str) -> list[tuple[str | None, str]]:
     return sections
 
 
-def _token_windows(text: str, target_tokens: int, overlap_tokens: int) -> Iterable[str]:
+def _token_windows(text: str, target_tokens: int, overlap_tokens: int):
     words = re.findall(r"\S+", text)
     if not words:
         return
@@ -69,63 +68,6 @@ def _token_windows(text: str, target_tokens: int, overlap_tokens: int) -> Iterab
         yield " ".join(words[start:end]).strip()
         if end == len(words):
             break
-
-
-def _load_hierarchical_chunker() -> Any | None:
-    candidates = (
-        ("docling.chunking", "HierarchicalChunker"),
-        ("docling.chunker", "HierarchicalChunker"),
-        ("docling_core.transforms.chunker.hierarchical_chunker", "HierarchicalChunker"),
-    )
-    for module_name, class_name in candidates:
-        try:
-            module = __import__(module_name, fromlist=[class_name])
-            return getattr(module, class_name, None)
-        except Exception:
-            continue
-    return None
-
-
-def _text_from_docling_chunk(chunk: Any) -> str:
-    for attr_name in ("text", "chunk_text", "content"):
-        value = getattr(chunk, attr_name, None)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return str(chunk).strip()
-
-
-def _chapter_from_docling_chunk(chunk: Any) -> str | None:
-    for attr_name in ("heading", "chapter", "section_title", "title"):
-        value = getattr(chunk, attr_name, None)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return None
-
-
-def _chunk_with_docling(parsed: "ParsedDocument") -> list[tuple[str | None, str]] | None:
-    if parsed.docling_doc is None:
-        return None
-
-    chunker_cls = _load_hierarchical_chunker()
-    if chunker_cls is None:
-        return None
-
-    try:
-        chunker = chunker_cls()
-        raw_chunks = chunker.chunk(parsed.docling_doc)
-    except Exception:
-        return None
-
-    chunks: list[tuple[str | None, str]] = []
-    try:
-        for raw_chunk in raw_chunks:
-            text = _text_from_docling_chunk(raw_chunk)
-            if text:
-                chunks.append((_chapter_from_docling_chunk(raw_chunk), text))
-    except Exception:
-        return None
-
-    return chunks or None
 
 
 def chunk_document(
@@ -141,9 +83,7 @@ def chunk_document(
     if overlap_tokens >= target_tokens:
         raise ValueError("overlap_tokens must be < target_tokens")
 
-    section_texts = _chunk_with_docling(parsed)
-    if section_texts is None:
-        section_texts = _split_markdown_sections(parsed.markdown)
+    section_texts = _split_markdown_sections(parsed.markdown)
 
     chunks: list[DocumentChunk] = []
     chunk_index = 0

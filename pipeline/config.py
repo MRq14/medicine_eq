@@ -60,21 +60,25 @@ def get_chroma_collection(name: str) -> Collection:
 def list_collection_names(include_existing: bool = True) -> list[str]:
     """
     List collection names from folder structure + existing cloud collections.
-    Folder name → collection name directly (e.g. 'Fuji Amulet' → 'Fuji_Amulet').
+    Full subfolder path → collection name (e.g. 'Fuji/Amulet' → 'Fuji_Amulet').
     """
     names: set[str] = set()
 
-    # docs/[Brand]/ folders
-    if DOCS_ROOT.exists() and DOCS_ROOT.is_dir():
-        for subdir in DOCS_ROOT.iterdir():
-            if subdir.is_dir():
-                names.add(slugify(subdir.name))
+    def _collect(root: Path) -> None:
+        if not root.exists() or not root.is_dir():
+            return
+        for subdir in root.rglob("*"):
+            if subdir.is_dir() and any(subdir.glob("*.pdf")):
+                try:
+                    rel = subdir.resolve().relative_to(root.resolve())
+                    parts = rel.parts
+                    if parts:
+                        names.add("_".join(slugify(p) for p in parts))
+                except Exception:
+                    pass
 
-    # data/uploads/[Brand]/ folders
-    if UPLOADS_ROOT.exists() and UPLOADS_ROOT.is_dir():
-        for brand_dir in UPLOADS_ROOT.iterdir():
-            if brand_dir.is_dir():
-                names.add(slugify(brand_dir.name))
+    _collect(DOCS_ROOT)
+    _collect(UPLOADS_ROOT)
 
     if include_existing:
         try:
@@ -91,21 +95,24 @@ def list_collection_names(include_existing: bool = True) -> list[str]:
 
 def infer_collection_name(file_path: Path) -> str:
     """
-    Derive collection name from file path.
-    data/uploads/Fuji Amulet/file.pdf → 'Fuji_Amulet'
-    docs/Fuji Amulet/file.pdf        → 'Fuji_Amulet'
+    Derive collection name from full subfolder path relative to the uploads/docs root.
+    data/uploads/Fuji/Amulet/file.pdf → 'Fuji_Amulet'
+    data/uploads/Fuji/file.pdf        → 'Fuji'
+    docs/Siemens/CT/file.pdf          → 'Siemens_CT'
     """
     file_path = Path(file_path)
 
     for root in (UPLOADS_ROOT, DOCS_ROOT):
         try:
             rel = file_path.resolve().relative_to(root.resolve())
-            if rel.parts:
-                return slugify(rel.parts[0])
+            # All parts except the filename itself
+            dir_parts = rel.parts[:-1]
+            if dir_parts:
+                return "_".join(slugify(p) for p in dir_parts)
         except Exception:
             pass
 
-    # Fallback: parent folder name
+    # Fallback: immediate parent folder name
     parent = slugify(file_path.parent.name, default="")
     if parent and parent not in {"docs", "data", "uploads"}:
         return parent

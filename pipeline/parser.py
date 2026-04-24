@@ -1,8 +1,7 @@
 import re
 from pathlib import Path
 
-from docling.document_converter import DocumentConverter
-from docling.datamodel.base_models import ConversionStatus
+import fitz  # PyMuPDF
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -51,19 +50,15 @@ def _extract_metadata(text_sample: str, filename: str) -> DocMetadata:
     doc_name = Path(filename).stem
     sample_lower = text_sample.lower()
 
-    # Manufacturer: common medical device brands
     manufacturer = None
     brand_pattern = r"FUJIFILM|SIEMENS|GE|PHILIPS|CANON|RICOH|KONICA|MINOLTA|AGFA|CARESTREAM|KODAK|VARIAN|TOSHIBA|HITACHI|OLYMPUS|PENTAX|ZEISS|CARL ZEISS"
     mfr_match = re.search(brand_pattern, text_sample, re.IGNORECASE)
     if mfr_match:
         manufacturer = mfr_match.group().strip()
 
-    # Model: look for common patterns like FDR-1000, Model X, etc.
     model = None
-    # Try equipment-specific patterns first (e.g., FDR-1000, FSX-100)
     model_match = re.search(r"(?:FDR|FSX|DRX|AXIOM)-[\d/\-A-Z]+", text_sample, re.IGNORECASE)
     if not model_match:
-        # Fall back to generic Model/Ref patterns
         model_match = re.search(
             r"(?:model\s*(?:no\.?|number)?|part\s*(?:no\.?|number)?|ref\.?)[:\s#]+([A-Z0-9][A-Za-z0-9\-_/. ]{1,30})",
             text_sample,
@@ -73,14 +68,12 @@ def _extract_metadata(text_sample: str, filename: str) -> DocMetadata:
         model = model_match.group(1) if model_match.lastindex else model_match.group()
         model = model.strip()
 
-    # Equipment type: scan for keyword matches
     equipment_type = None
     for eq_type, keywords in _EQUIPMENT_KEYWORDS.items():
         if any(kw in sample_lower for kw in keywords):
             equipment_type = eq_type
             break
 
-    # Document type: scan for keyword matches
     document_type = None
     for doc_type, keywords in _DOC_TYPE_KEYWORDS.items():
         if any(kw in sample_lower for kw in keywords):
@@ -99,32 +92,30 @@ def _extract_metadata(text_sample: str, filename: str) -> DocMetadata:
 class ParsedDocument:
     """Container for parsed PDF output."""
 
-    def __init__(self, metadata: DocMetadata, markdown: str, docling_doc):
+    def __init__(self, metadata: DocMetadata, markdown: str):
         self.metadata = metadata
         self.markdown = markdown
-        self.docling_doc = docling_doc  # raw docling Document, needed by chunker
 
 
 def parse_pdf(file_path: str | Path) -> ParsedDocument:
-    """Convert a PDF to Markdown and extract document-level metadata."""
+    """Extract text from a PDF using PyMuPDF and extract document-level metadata."""
     file_path = Path(file_path)
     if not file_path.exists():
         raise FileNotFoundError(f"PDF not found: {file_path}")
 
-    converter = DocumentConverter()
-    result = converter.convert(str(file_path))
+    doc = fitz.open(str(file_path))
+    pages_text: list[str] = []
+    for page_num, page in enumerate(doc, start=1):
+        text = page.get_text("text")
+        if text.strip():
+            pages_text.append(f"--- Page {page_num} ---\n{text}")
+    doc.close()
 
-    if result.status not in (ConversionStatus.SUCCESS, ConversionStatus.PARTIAL_SUCCESS):
-        raise RuntimeError(f"docling conversion failed with status: {result.status}")
-
-    doc = result.document
-    markdown = doc.export_to_markdown()
-
-    # Use first ~4000 chars as the sample for metadata extraction
-    text_sample = markdown[:4000]
+    full_text = "\n\n".join(pages_text)
+    text_sample = full_text[:4000]
     metadata = _extract_metadata(text_sample, file_path.name)
 
-    return ParsedDocument(metadata=metadata, markdown=markdown, docling_doc=doc)
+    return ParsedDocument(metadata=metadata, markdown=full_text)
 
 
 if __name__ == "__main__":
@@ -137,4 +128,4 @@ if __name__ == "__main__":
     parsed = parse_pdf(sys.argv[1])
     print("=== Metadata ===")
     print(parsed.metadata.model_dump_json(indent=2))
-    print(f"\n=== Markdown preview (first 500 chars) ===\n{parsed.markdown[:500]}")
+    print(f"\n=== Text preview (first 500 chars) ===\n{parsed.markdown[:500]}")

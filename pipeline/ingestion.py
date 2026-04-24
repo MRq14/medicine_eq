@@ -3,25 +3,31 @@ from pathlib import Path
 from pipeline.chunker import chunk_document
 from pipeline.config import (
     get_chroma_collection,
-    infer_doc_group,
+    infer_collection_name,
     list_collection_names,
-    resolve_collection_name_for_file,
     validate_pdf_path,
 )
 from pipeline.embedder import embed_chunks
 from pipeline.parser import parse_pdf
 
 
-def _find_existing_document(doc_name: str) -> str | None:
-    for collection_name in list_collection_names(include_legacy=True, include_existing=True):
-        collection = get_chroma_collection(collection_name)
-        existing = collection.get(where={"doc_name": doc_name})
-        if existing.get("ids"):
-            return collection_name
+def _find_existing_document(doc_name: str, target_collection_name: str | None = None) -> str | None:
+    collections_to_check = (
+        [target_collection_name] if target_collection_name 
+        else list_collection_names(include_existing=True)
+    )
+    for collection_name in collections_to_check:
+        try:
+            collection = get_chroma_collection(collection_name)
+            existing = collection.get(where={"doc_name": doc_name})
+            if existing.get("ids"):
+                return collection_name
+        except Exception:
+            pass
     return None
 
 
-def ingest_pdf(file_path: str | Path) -> dict:
+def ingest_pdf(file_path: str | Path, brand: str | None = None) -> dict:
     """
     Full pipeline: parse PDF → chunk → embed → store in ChromaDB.
     Returns dict with status, chunks_added, and metadata.
@@ -31,7 +37,8 @@ def ingest_pdf(file_path: str | Path) -> dict:
     # Check for duplicates BEFORE expensive operations
     # Extract doc_name from path to check early (without full parsing)
     doc_name = file_path.stem
-    existing_collection = _find_existing_document(doc_name)
+    target_collection_name = brand if brand else infer_collection_name(file_path)
+    existing_collection = _find_existing_document(doc_name, target_collection_name)
     if existing_collection:
         print(
             f"⚠ Document '{doc_name}' already exists in collection "
@@ -46,11 +53,6 @@ def ingest_pdf(file_path: str | Path) -> dict:
 
     print(f"[1/4] Parsing {file_path.name}...")
     parsed_doc = parse_pdf(file_path)
-    target_collection_name = resolve_collection_name_for_file(
-        file_path=file_path,
-        metadata=parsed_doc.metadata.model_dump(),
-    )
-    doc_group = infer_doc_group(file_path=file_path, metadata=parsed_doc.metadata.model_dump())
     collection = get_chroma_collection(target_collection_name)
 
     print(f"[2/4] Chunking {parsed_doc.metadata.doc_name}...")
@@ -77,7 +79,7 @@ def ingest_pdf(file_path: str | Path) -> dict:
         "metadatas": [
             {
                 **chunk.metadata.model_dump(exclude_none=True),
-                "doc_group": doc_group,
+                "target_collection_name": target_collection_name,
                 "collection_name": target_collection_name,
                 "source_filename": file_path.name,
             }
@@ -90,7 +92,7 @@ def ingest_pdf(file_path: str | Path) -> dict:
 
     print(
         f"✓ Ingested {len(chunks)} chunks for '{parsed_doc.metadata.doc_name}' "
-        f"into '{target_collection_name}' (group: {doc_group})"
+        f"into '{target_collection_name}' (group: {target_collection_name})"
     )
 
     return {
@@ -98,7 +100,7 @@ def ingest_pdf(file_path: str | Path) -> dict:
         "doc_name": parsed_doc.metadata.doc_name,
         "chunks_added": len(chunks),
         "collection_name": target_collection_name,
-        "doc_group": doc_group,
+        "target_collection_name": target_collection_name,
         "metadata": parsed_doc.metadata.model_dump(),
     }
 
