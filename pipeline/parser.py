@@ -97,7 +97,7 @@ class ParsedDocument:
         self.markdown = markdown
 
 
-def parse_pdf(file_path: str | Path) -> ParsedDocument:
+def parse_pdf(file_path: str | Path, original_filename: str | None = None) -> ParsedDocument:
     """Extract text from a PDF using PyMuPDF and extract document-level metadata."""
     file_path = Path(file_path)
     if not file_path.exists():
@@ -113,7 +113,7 @@ def parse_pdf(file_path: str | Path) -> ParsedDocument:
 
     full_text = "\n\n".join(pages_text)
     text_sample = full_text[:4000]
-    metadata = _extract_metadata(text_sample, file_path.name)
+    metadata = _extract_metadata(text_sample, original_filename or file_path.name)
 
     return ParsedDocument(metadata=metadata, markdown=full_text)
 

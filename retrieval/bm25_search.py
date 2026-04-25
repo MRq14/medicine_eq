@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import os
+import pickle
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from rank_bm25 import BM25Okapi
@@ -10,6 +13,8 @@ from pipeline.config import (
     get_chroma_collection,
     list_collection_names,
 )
+
+_INDEX_PATH = Path(os.getenv("BM25_INDEX_PATH", "data/bm25_index.pkl"))
 
 
 def _tokenize(text: str) -> list[str]:
@@ -67,6 +72,41 @@ class _BM25State:
 _STATE = _BM25State()
 
 
+def save_bm25_index() -> None:
+    if _STATE.bm25 is None:
+        return
+    with _INDEX_PATH.open("wb") as f:
+        pickle.dump(
+            {
+                "bm25": _STATE.bm25,
+                "collection_names_key": _STATE.collection_names_key,
+                "ids": _STATE.ids,
+                "docs": _STATE.docs,
+                "metadatas": _STATE.metadatas,
+                "source_collections": _STATE.source_collections,
+            },
+            f,
+        )
+
+
+def load_bm25_index() -> bool:
+    """Load persisted index into _STATE. Returns True if successful."""
+    if not _INDEX_PATH.exists():
+        return False
+    try:
+        with _INDEX_PATH.open("rb") as f:
+            data = pickle.load(f)
+        _STATE.bm25 = data["bm25"]
+        _STATE.collection_names_key = data["collection_names_key"]
+        _STATE.ids = data["ids"]
+        _STATE.docs = data["docs"]
+        _STATE.metadatas = data["metadatas"]
+        _STATE.source_collections = data["source_collections"]
+        return True
+    except Exception:
+        return False
+
+
 def rebuild_bm25_index(collection_names: list[str] | None = None) -> int:
     """
     Rebuild BM25 index from chunks stored in one or more ChromaDB collections.
@@ -112,6 +152,7 @@ def rebuild_bm25_index(collection_names: list[str] | None = None) -> int:
     _STATE.docs = all_docs
     _STATE.metadatas = all_metadatas
     _STATE.source_collections = all_collections
+    save_bm25_index()
     return len(all_ids)
 
 

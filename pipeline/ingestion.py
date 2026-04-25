@@ -27,16 +27,17 @@ def _find_existing_document(doc_name: str, target_collection_name: str | None = 
     return None
 
 
-def ingest_pdf(file_path: str | Path, brand: str | None = None) -> dict:
+def ingest_pdf(file_path: str | Path, brand: str | None = None, original_filename: str | None = None) -> dict:
     """
     Full pipeline: parse PDF → chunk → embed → store in ChromaDB.
     Returns dict with status, chunks_added, and metadata.
+    original_filename: the real filename (needed when file_path is a temp path).
     """
     file_path = validate_pdf_path(file_path)
 
     # Check for duplicates BEFORE expensive operations
     # Extract doc_name from path to check early (without full parsing)
-    doc_name = file_path.stem
+    doc_name = Path(original_filename).stem if original_filename else file_path.stem
     target_collection_name = brand if brand else infer_collection_name(file_path)
     existing_collection = _find_existing_document(doc_name, target_collection_name)
     if existing_collection:
@@ -51,8 +52,9 @@ def ingest_pdf(file_path: str | Path, brand: str | None = None) -> dict:
             "reason": "already_ingested",
         }
 
-    print(f"[1/4] Parsing {file_path.name}...")
-    parsed_doc = parse_pdf(file_path)
+    display_name = original_filename or file_path.name
+    print(f"[1/4] Parsing {display_name}...")
+    parsed_doc = parse_pdf(file_path, original_filename=original_filename)
     collection = get_chroma_collection(target_collection_name)
 
     print(f"[2/4] Chunking {parsed_doc.metadata.doc_name}...")

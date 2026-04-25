@@ -13,11 +13,18 @@ _executor = ThreadPoolExecutor(max_workers=4)
 from openai import AsyncOpenAI
 from pipeline.ingestion import ingest_pdf
 from retrieval import hybrid_search
+from retrieval.bm25_search import load_bm25_index, rebuild_bm25_index
 from pipeline.config import get_chroma_collection, list_collection_names
 
 _openai = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
 
 app = FastAPI(title="Medical Equipment RAG", version="1.0")
+
+
+@app.on_event("startup")
+def _startup():
+    if not load_bm25_index():
+        rebuild_bm25_index()
 
 app.add_middleware(
     CORSMiddleware,
@@ -161,7 +168,7 @@ async def ask(request: AskRequest):
 
     completion = await _openai.chat.completions.create(
         model="gpt-4o-mini",
-        temperature=0.2,
+        temperature=0.1,
         messages=[
             {
                 "role": "system",
@@ -214,8 +221,11 @@ async def ingest(file: UploadFile = File(...), brand: Optional[str] = None):
             tmp.write(content)
             tmp.flush()
 
-            result = ingest_pdf(tmp.name, brand=brand)
+            result = ingest_pdf(tmp.name, brand=brand, original_filename=file.filename)
             os.unlink(tmp.name)
+
+            if result.get("status") == "ok":
+                await asyncio.get_event_loop().run_in_executor(_executor, rebuild_bm25_index)
 
             return IngestResponse(
                 filename=file.filename,
