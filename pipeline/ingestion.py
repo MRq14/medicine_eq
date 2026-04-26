@@ -1,4 +1,5 @@
 from pathlib import Path
+import hashlib
 
 from pipeline.chunker import chunk_document
 from pipeline.config import (
@@ -11,7 +12,15 @@ from pipeline.embedder import embed_chunks
 from pipeline.parser import parse_pdf
 
 
-def _find_existing_document(doc_name: str, target_collection_name: str | None = None) -> str | None:
+def _compute_md5(file_path: str | Path) -> str:
+    hasher = hashlib.md5()
+    with open(file_path, 'rb') as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def _find_existing_document(doc_name: str, target_collection_name: str | None = None) -> dict[str, str] | None:
     collections_to_check = (
         [target_collection_name] if target_collection_name 
         else list_collection_names(include_existing=True)
@@ -19,15 +28,17 @@ def _find_existing_document(doc_name: str, target_collection_name: str | None = 
     for collection_name in collections_to_check:
         try:
             collection = get_chroma_collection(collection_name)
-            existing = collection.get(where={"doc_name": doc_name})
+            existing = collection.get(where={"doc_name": doc_name}, include=["metadatas"])
             if existing.get("ids"):
-                return collection_name
+                metadatas = existing.get("metadatas")
+                file_hash = metadatas[0].get("file_hash") if metadatas and metadatas[0] else None
+                return {"collection_name": collection_name, "file_hash": file_hash}
         except Exception:
             pass
     return None
 
 
-def ingest_pdf(file_path: str | Path, brand: str | None = None, original_filename: str | None = None) -> dict:
+def ingest_pdf(file_path: str | Path, brand: str | None = None, original_filename: str | None = None, force: bool = False) -> dict:
     """
     Full pipeline: parse PDF → chunk → embed → store in ChromaDB.
     Returns dict with status, chunks_added, and metadata.
@@ -39,18 +50,35 @@ def ingest_pdf(file_path: str | Path, brand: str | None = None, original_filenam
     # Extract doc_name from path to check early (without full parsing)
     doc_name = Path(original_filename).stem if original_filename else file_path.stem
     target_collection_name = brand if brand else infer_collection_name(file_path)
-    existing_collection = _find_existing_document(doc_name, target_collection_name)
-    if existing_collection:
-        print(
-            f"⚠ Document '{doc_name}' already exists in collection "
-            f"'{existing_collection}'. Skipping."
-        )
-        return {
-            "status": "skipped",
-            "doc_name": doc_name,
-            "collection_name": existing_collection,
-            "reason": "already_ingested",
-        }
+    
+    file_hash = _compute_md5(file_path)
+    existing_doc = _find_existing_document(doc_name, target_collection_name)
+    
+    is_update = False
+    if existing_doc:
+        existing_collection = existing_doc["collection_name"]
+        existing_hash = existing_doc.get("file_hash")
+        
+        if not force and existing_hash == file_hash:
+            print(
+                f"⚠ Document '{doc_name}' already exists in collection "
+                f"'{existing_collection}' with identical hash. Skipping."
+            )
+            return {
+                "status": "skipped",
+                "doc_name": doc_name,
+                "collection_name": existing_collection,
+                "reason": "already_ingested_same_hash",
+            }
+        else:
+            reason = "hash_mismatch" if existing_hash != file_hash else "forced_update"
+            print(
+                f"↻ Updating '{doc_name}' in collection '{existing_collection}' ({reason}). "
+                "Deleting old chunks..."
+            )
+            collection = get_chroma_collection(existing_collection)
+            collection.delete(where={"doc_name": doc_name})
+            is_update = True
 
     display_name = original_filename or file_path.name
     print(f"[1/4] Parsing {display_name}...")
@@ -84,6 +112,7 @@ def ingest_pdf(file_path: str | Path, brand: str | None = None, original_filenam
                 "target_collection_name": target_collection_name,
                 "collection_name": target_collection_name,
                 "source_filename": file_path.name,
+                "file_hash": file_hash,
             }
             for chunk in chunks
         ],
@@ -93,17 +122,18 @@ def ingest_pdf(file_path: str | Path, brand: str | None = None, original_filenam
     collection.add(**insert_data)
 
     print(
-        f"✓ Ingested {len(chunks)} chunks for '{parsed_doc.metadata.doc_name}' "
+        f"✓ {'Updated' if is_update else 'Ingested'} {len(chunks)} chunks for '{parsed_doc.metadata.doc_name}' "
         f"into '{target_collection_name}' (group: {target_collection_name})"
     )
 
     return {
-        "status": "ok",
+        "status": "updated" if is_update else "ok",
         "doc_name": parsed_doc.metadata.doc_name,
         "chunks_added": len(chunks),
         "collection_name": target_collection_name,
         "target_collection_name": target_collection_name,
         "metadata": parsed_doc.metadata.model_dump(),
+        "file_hash": file_hash,
     }
 
 

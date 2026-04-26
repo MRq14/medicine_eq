@@ -206,7 +206,7 @@ async def ask(request: AskRequest):
 
 
 @app.post("/ingest", response_model=IngestResponse)
-async def ingest(file: UploadFile = File(...), brand: Optional[str] = None):
+async def ingest(file: UploadFile = File(...), brand: Optional[str] = None, force: bool = False):
     """
     Upload and ingest a medical equipment PDF.
     brand: brand name, e.g. 'fuji', 'ge', 'philips' — determines which collection to store in.
@@ -221,10 +221,10 @@ async def ingest(file: UploadFile = File(...), brand: Optional[str] = None):
             tmp.write(content)
             tmp.flush()
 
-            result = ingest_pdf(tmp.name, brand=brand, original_filename=file.filename)
+            result = ingest_pdf(tmp.name, brand=brand, original_filename=file.filename, force=force)
             os.unlink(tmp.name)
 
-            if result.get("status") == "ok":
+            if result.get("status") in ("ok", "updated"):
                 await asyncio.get_event_loop().run_in_executor(_executor, rebuild_bm25_index)
 
             return IngestResponse(

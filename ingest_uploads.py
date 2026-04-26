@@ -23,6 +23,7 @@ from retrieval.bm25_search import rebuild_bm25_index
 def main() -> None:
     parser = argparse.ArgumentParser(description="Ingest all PDFs from data/uploads")
     parser.add_argument("--dry-run", action="store_true", help="List PDFs without ingesting")
+    parser.add_argument("--force", action="store_true", help="Force re-ingest even if file hash hasn't changed")
     args = parser.parse_args()
 
     pdfs = [
@@ -42,16 +43,19 @@ def main() -> None:
         return
 
     print()
-    ingested = skipped = failed = 0
+    ingested = skipped = failed = updated = 0
 
     for pdf in pdfs:
         try:
-            result = ingest_pdf(pdf, original_filename=pdf.name)
+            result = ingest_pdf(pdf, original_filename=pdf.name, force=args.force)
             status = result.get("status")
             collection = result.get("collection_name", "?")
             if status == "ok":
                 print(f"✓ {pdf.name}  →  {collection}  ({result.get('chunks_added', 0)} chunks)")
                 ingested += 1
+            elif status == "updated":
+                print(f"↻ {pdf.name}  →  {collection}  (updated: {result.get('chunks_added', 0)} chunks)")
+                updated += 1
             elif status == "skipped":
                 print(f"  {pdf.name}  already ingested, skipping")
                 skipped += 1
@@ -61,9 +65,9 @@ def main() -> None:
             print(f"✗ {pdf.name}  ERROR: {e}")
             failed += 1
 
-    print(f"\nDone — {ingested} ingested, {skipped} skipped, {failed} failed.")
+    print(f"\nDone — {ingested} ingested, {updated} updated, {skipped} skipped, {failed} failed.")
 
-    if ingested > 0:
+    if ingested > 0 or updated > 0:
         print("Rebuilding BM25 index...")
         count = rebuild_bm25_index()
         print(f"BM25 index updated ({count} chunks).")
