@@ -2,3 +2,4 @@ venv/
 *.pyc
 .env
 chroma_db
+bm25_index.pkl

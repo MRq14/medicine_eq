@@ -2,62 +2,70 @@
 
 ## What this is
 RAG system for searching medical equipment service documentation (PDFs).
-No LLM generation — pure retrieval only. Embeddings via OpenAI API, vector store via ChromaDB Cloud.
+Hybrid retrieval (vector + BM25) with LLM answer synthesis via OpenAI `gpt-4o-mini`.
+Embeddings via OpenAI API, vector store via ChromaDB Cloud.
 
 ## Stack
 - Python 3.11+
-- **docling** — PDF → Markdown parsing
-- **chromadb** — Cloud-hosted vector store
-- **openai** — embeddings via `text-embedding-3-small`
-- **rank_bm25** — sparse BM25 retrieval
+- **PyMuPDF (fitz)** — PDF → text parsing
+- **chromadb** — Cloud-hosted vector store (PersistentClient also supported for local)
+- **openai** — embeddings via `text-embedding-3-small`, answers via `gpt-4o-mini`
+- **rank_bm25** — sparse BM25 retrieval, persisted to `data/bm25_index.pkl`
 - **fastapi + uvicorn** — REST API on port 8000
 - **plain HTML/CSS/JS** — single-file frontend (`frontend/index.html`)
 
 ## Project layout
 ```
-pipeline/     parser → chunker → embedder → ingestion
-retrieval/    vector_search, bm25_search, hybrid (RRF)
-api/          FastAPI app (main.py)
-frontend/     index.html (single file, no frameworks)
-data/uploads/ drop PDFs here
-.env          Chroma Cloud credentials
+pipeline/          parser → chunker → embedder → ingestion
+retrieval/         vector_search, bm25_search, hybrid (RRF)
+api/               FastAPI app (main.py)
+frontend/          index.html (single file, no frameworks)
+data/uploads/      drop PDFs here (subfolders = collections)
+data/bm25_index.pkl  persisted BM25 index (rebuilt on new ingest)
+ingest_uploads.py  scan data/uploads and ingest new PDFs
+.env               OpenAI + Chroma Cloud credentials
 ```
 
 ## Environment
-- `.env` must have:
-  - `CHROMA_CLOUD_API_KEY`
-  - `CHROMA_CLOUD_TENANT`
-  - `CHROMA_CLOUD_DATABASE`
-- Load with `python-dotenv` at every entry point
-- ChromaDB is accessed via Cloud HTTP Client.
-- ChromaDB collection: Multi-collection strategy based on directory structure (`medical_docs_<slug>`).
+`.env` must have:
+- `OPENAI_API_KEY`
+- `CHROMA_CLOUD_API_KEY`
+- `CHROMA_CLOUD_TENANT`
+- `CHROMA_CLOUD_DATABASE`
+
+Load with `python-dotenv` at every entry point.
+
+## API endpoints
+- `POST /ask` — hybrid search + gpt-4o-mini answer synthesis (Russian)
+- `POST /search` — hybrid search, returns raw chunks
+- `POST /ingest` — upload a PDF via multipart form
+- `GET /documents` — list all ingested documents
+- `GET /collections` — list all collections
+- `GET /health`
 
 ## Key conventions
-- No S3, no e-infra LLM endpoints — local transformers for embeddings, and Chroma Cloud for vector storage
-- No LLM calls for generation, retrieval only
-- The system supports multi-collection routing. Documents are organized by folder, inferring collection names like `medical_docs_fuji_amulet`.
+- Collection name derived from subfolder: `data/uploads/Fuji Amulet/` → `Fuji_Amulet`
 - Chunk ID format: `{doc_name}_chunk_{chunk_index}`
 - Skip chunks under 50 characters
-- BM25 index builds across all collections and rebuilds on every API startup (prototype trade-off)
-- Target chunk size: ~512 tokens, ~50 token overlap
-- Hybrid search uses Reciprocal Rank Fusion (RRF, k=60), returning top-5. Includes a collection-aware fusion key to stop ID collisions.
-
-## Build order (confirm each step before proceeding)
-1. `pipeline/parser.py` — PDF → Markdown + DocMetadata
-2. `pipeline/chunker.py` — HierarchicalChunker + chunk metadata
-3. `pipeline/embedder.py` — batch embed with `sentence-transformers`
-4. `pipeline/ingestion.py` — orchestrate pipeline → ChromaDB Cloud (with multi-collection routing)
-5. `retrieval/vector_search.py`
-6. `retrieval/bm25_search.py`
-7. `retrieval/hybrid.py`
-8. `api/main.py`
-9. `frontend/index.html`
-10. `sample_ingest.py` + `requirements.txt`
+- Chunk size: ~1500 chars, ~150 char overlap
+- BM25 index persisted to `data/bm25_index.pkl` — loaded on startup, rebuilt after ingest
+- Hybrid search uses Reciprocal Rank Fusion (RRF, k=60), returns top-5
+- `ingest_pdf()` accepts `original_filename` param to preserve real filename when using temp paths
+- `gpt-4o-mini` used for answer synthesis at temperature 0.2, answers in Russian
 
 ## Running
 ```bash
 pip install -r requirements.txt
-cp .env.example .env  # set Chroma credentials
+cp .env.example .env  # set OpenAI + Chroma credentials
 uvicorn api.main:app --reload --port 8000
-# use the frontend / drop a PDF to ingest
+
+# Ingest PDFs from data/uploads:
+python ingest_uploads.py --dry-run  # preview
+python ingest_uploads.py            # ingest
+```
+
+## Serving frontend
+```bash
+python -m http.server 8080 --directory frontend
+# open http://localhost:8080
 ```
